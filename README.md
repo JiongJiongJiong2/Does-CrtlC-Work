@@ -2,7 +2,7 @@
   <img src="clipboard_fx_icon_1780927283406.png" alt="Dose Ctrl+C Icon" width="128">
 </p>
 
-<h1 align="center">Does your Ctrl+C really work</h1>
+<h1 align="center">Does your Ctrl+C really work?</h1>
 
 <p align="center">
   A lightweight clipboard feedback tool that shows a visual animation near your cursor<br>
