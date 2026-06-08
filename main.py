@@ -4,6 +4,7 @@ Dose Ctrl+C - 剪贴板复制反馈动画工具
 """
 
 import sys
+import keyboard
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor
 from PySide6.QtCore import QTimer, Qt
@@ -40,6 +41,9 @@ class ClipboardFXApp:
         # 当前鼠标位置
         self._mouse_x = 0
         self._mouse_y = 0
+        
+        # 全局快捷键：Ctrl+Shift+Q 退出
+        keyboard.add_hotkey('ctrl+shift+q', self._quit, suppress=False)
         
     def _setup_tray(self):
         """设置系统托盘"""
@@ -147,6 +151,7 @@ class ClipboardFXApp:
         
     def _quit(self):
         """退出应用"""
+        keyboard.unhook_all_hotkeys()  # 先移除所有热键，避免重复触发
         self.mouse_tracker.stop_tracking()
         self.clipboard_monitor.stop_monitoring()
         self.tray.hide()

@@ -98,10 +98,10 @@ class FeedbackWidget(QWidget):
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         
-        # 计算窗口尺寸
-        max_w = int(self._target_width + 60) if self._target_width else 100
-        max_h = int(SIZES['box_height'] + 40)
-        self.setFixedSize(max(max_w, 500), max(max_h, 80))
+        # 计算窗口尺寸 - 圆点在上，黑框在下
+        max_w = int(self._target_width + 40) if self._target_width else 100
+        max_h = int(SIZES['box_height'] + SIZES['dot_radius'] * 2 + 30)  # 圆点高度 + 框高度 + 间距
+        self.setFixedSize(max(max_w, 500), max(max_h, 100))
         
         # 动画定时器
         self._anim_timer = QTimer(self)
@@ -302,10 +302,20 @@ class FeedbackWidget(QWidget):
         
         # 绘制内容框（仅 COPY 类型）
         if self._feedback_type == FeedbackType.COPY and self._box_width > 0:
-            box_x = dot_cx + dot_radius - 2  # 左边界紧邻圆点
-            box_y = dot_cy - self._box_height / 2  # 使用动态高度居中
+            # 黑框左边界对齐圆点中心（从圆点正下方开始）
+            box_x = dot_cx  # 左边界对齐圆点中心
+            # 框顶部在圆点底部下方留2px间距
+            gap = 2
+            box_y = dot_cy + dot_radius * self._dot_scale + gap
             box_w = self._box_width
             box_h = self._box_height
+            
+            # 绘制圆点到黑框的连接竖线（黄色）
+            if self._box_opacity > 0:
+                line_top = dot_cy + scaled_radius if self._dot_scale > 0 else dot_cy + dot_radius
+                line_bottom = box_y
+                painter.setPen(QPen(QColor(COLORS['border']), 2))
+                painter.drawLine(int(dot_cx), int(line_top), int(dot_cx), int(line_bottom))
             
             # 背景（带右边界渐变消失效果）
             painter.save()
@@ -330,7 +340,8 @@ class FeedbackWidget(QWidget):
             # 绘制文字
             if self._display_text and self._box_width > 20:
                 painter.setPen(QColor(COLORS['text']))
-                font = QFont("Consolas", 10)
+                font = QFont("Cascadia Code", 10)
+                font.setStyleHint(QFont.Monospace)
                 font.setLetterSpacing(QFont.AbsoluteSpacing, 2)
                 painter.setFont(font)
                 
