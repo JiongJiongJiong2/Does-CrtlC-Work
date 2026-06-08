@@ -28,14 +28,6 @@
   <img src="Does-CtrlC-Work-recording.gif" alt="Does-CtrlC-Work-recording">
 </p>
 
-## Quick Start
-
-```bash
-cd dose-ctrlc
-pip install -r requirements.txt
-python main.py
-```
-
 ## Usage
 
 | Action | Effect |
@@ -45,6 +37,19 @@ python main.py
 | `Ctrl+V` | Green dot (paste detected) |
 | `Ctrl+Shift+Q` | Quit the application |
 | Right-click tray icon → Exit | Quit the application |
+
+## Quick Start
+
+```bash
+#if you are developer and want to make some contributions:
+cd dose-ctrlc
+pip install -r requirements.txt
+python main.py
+
+#if you just want to use this tool:
+#Download the .exe file from the release page at the right sidebar of the crrent page :) 
+
+```
 
 ## Build
 
