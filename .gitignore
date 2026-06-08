@@ -1,0 +1,28 @@
+# TMP 原型文件
+TMP/
+
+# PyInstaller 打包产物
+dose-ctrlc/build/
+dose-ctrlc/dist/
+dose-ctrlc/*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ico (可选，如果不想包含二进制图标)
+# dose-ctrlc/app_icon.ico
