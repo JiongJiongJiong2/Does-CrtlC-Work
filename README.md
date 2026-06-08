@@ -24,6 +24,10 @@
 - **Cursor-bound** — Animation follows your mouse directly, no delay
 - **Cyberpunk Unicode decode effect** — Text reveals left-to-right using block characters (`█ ▓ ▒ ░`)
 
+<p align="center">
+  <img src="Does-CtrlC-Work-recording.gif" alt="Does-CtrlC-Work-recording">
+</p>
+
 ## Quick Start
 
 ```bash
