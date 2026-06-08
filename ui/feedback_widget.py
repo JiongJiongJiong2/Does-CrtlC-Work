@@ -305,8 +305,11 @@ class FeedbackWidget(QWidget):
             # 黑框左边界对齐圆点中心（从圆点正下方开始）
             box_x = dot_cx  # 左边界对齐圆点中心
             # 框顶部在圆点底部下方留2px间距
-            gap = 2
-            box_y = dot_cy + dot_radius * self._dot_scale + gap
+            gap = 0
+
+            #box_y = dot_cy + dot_radius * self._dot_scale + gap
+            box_y = dot_cy
+
             box_w = self._box_width
             box_h = self._box_height
             
@@ -314,11 +317,18 @@ class FeedbackWidget(QWidget):
             if self._box_opacity > 0:
                 line_top = dot_cy + scaled_radius if self._dot_scale > 0 else dot_cy + dot_radius
                 line_bottom = box_y
+                
+                #line_top = dot_cy
+                #line_bottom = box_y + box_h
+                
                 painter.setPen(QPen(QColor(COLORS['border']), 2))
                 painter.drawLine(int(dot_cx), int(line_top), int(dot_cx), int(line_bottom))
             
             # 背景（带右边界渐变消失效果）
             painter.save()
+
+            #
+            painter.setCompositionMode(QPainter.CompositionMode_DestinationOver)
             
             # 创建渐变遮罩
             gradient = QLinearGradient(box_x, box_y, box_x + box_w, box_y)
@@ -330,6 +340,9 @@ class FeedbackWidget(QWidget):
             painter.setPen(Qt.NoPen)
             painter.drawRect(int(box_x), int(box_y), int(box_w), int(box_h))
             
+            #
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+
             # 左边界黄色线条
             if self._box_opacity > 0:
                 painter.setPen(QPen(QColor(COLORS['border']), 2))
