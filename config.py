@@ -38,8 +38,8 @@ SIZES = {
 
 # Spring 物理参数 (用于鼠标跟随缓动)
 SPRING = {
-    'stiffness': 500,
-    'damping': 40,
+    'stiffness': 1500,
+    'damping': 70,
 }
 
 # 文本截断长度
