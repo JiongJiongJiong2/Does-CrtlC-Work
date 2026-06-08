@@ -1,4 +1,4 @@
-# Dose Ctrl+C
+# Does your Ctrl+C really work?
 
 A lightweight clipboard feedback tool that shows a visual animation near your cursor when you copy (`Ctrl+C`) or paste (`Ctrl+V`) text. Never wonder again whether your copy actually worked.
 
