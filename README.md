@@ -1,6 +1,20 @@
-# Does your Ctrl+C really work?
+<p align="center">
+  <img src="clipboard_fx_icon_1780927283406.png" alt="Dose Ctrl+C Icon" width="128">
+</p>
 
-A lightweight clipboard feedback tool that shows a visual animation near your cursor when you copy (`Ctrl+C`) or paste (`Ctrl+V`) text. Never wonder again whether your copy actually worked.
+<h1 align="center">Does your Ctrl+C really work</h1>
+
+<p align="center">
+  A lightweight clipboard feedback tool that shows a visual animation near your cursor<br>
+  when you copy (<code>Ctrl+C</code>) or paste (<code>Ctrl+V</code>) text.<br>
+  Never wonder again whether your copy actually worked.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/PySide6-41CD52?style=flat&logo=qt&logoColor=white" alt="PySide6">
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License">
+</p>
 
 ## Features
 
@@ -40,6 +54,15 @@ The output exe will be in `dist/DoseCtrlC.exe`.
 
 > Note: `keyboard` library requires **Administrator privileges** for global hotkey detection. Right-click the exe and select "Run as administrator".
 
+## Tech Stack
+
+| Language / Framework | Purpose |
+|---------------------|---------|
+| Python | Core language |
+| PySide6 (Qt 6) | GUI framework |
+| pyperclip | Cross-platform clipboard access |
+| keyboard | Global hotkey listener |
+
 ## File Structure
 
 ```
@@ -48,6 +71,8 @@ dose-ctrlc/
 ├── config.py                 # Animation timing, colors, sizes, spring params
 ├── requirements.txt          # Python dependencies
 ├── app_icon.ico              # Application icon
+├── clipboard_fx_icon_*.png   # Project logo
+├── build.bat                 # PyInstaller build script
 ├── core/
 │   ├── __init__.py
 │   ├── mouse_tracker.py      # Global cursor tracking + spring physics
@@ -57,12 +82,6 @@ dose-ctrlc/
     ├── feedback_widget.py    # Full animation lifecycle (dot → box → text → collapse)
     └── scramble_text.py      # Unicode block-character decode effect (standalone)
 ```
-
-## Dependencies
-
-- **PySide6** — Qt GUI framework
-- **pyperclip** — Cross-platform clipboard access
-- **keyboard** — Global hotkey listener
 
 ## License
 
