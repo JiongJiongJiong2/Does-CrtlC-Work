@@ -6,7 +6,10 @@
 from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtGui import QGuiApplication, QImage
 import os
+import re
+import base64
 from urllib.parse import unquote
+from urllib.request import urlopen, Request
 import keyboard
 import pyperclip
 
@@ -137,13 +140,24 @@ class ClipboardMonitor(QObject):
                 if image is not None and not text:
                     text = f"Copied {os.path.basename(image_path)}"
 
-        # 3) 纯文本路径 / file:/// 路径（某些软件会这样复制）
+        # 3) HTML 内容（网页复制常见：<img src=...>）
+        if image is None and mime_data and mime_data.hasHtml():
+            image, html_label = self._try_extract_image_from_html(mime_data.html())
+            if image is not None and not text:
+                text = html_label or "Copied Web Image"
+
+        # 4) 纯文本路径 / file:/// 路径（某些软件会这样复制）
         if image is None and text:
             maybe_path = self._normalize_possible_path_text(text)
             if maybe_path:
                 image = self._try_load_image_from_path(maybe_path)
                 if image is not None:
                     text = f"Copied {os.path.basename(maybe_path)}"
+            else:
+                # 纯文本里也可能是 http(s) 图片地址或 data URI
+                image, txt_label = self._try_extract_image_from_text(text)
+                if image is not None:
+                    text = txt_label or "Copied Web Image"
 
         return text, image
 
@@ -155,6 +169,7 @@ class ClipboardMonitor(QObject):
         text = ""
         image_key = 0
         url_signature = ""
+        html_signature = ""
 
         if mime_data and mime_data.hasText():
             text = mime_data.text() or ""
@@ -167,7 +182,10 @@ class ClipboardMonitor(QObject):
         if mime_data and mime_data.hasUrls():
             url_signature = "|".join([u.toString() for u in mime_data.urls()])
 
-        return text, image_key, url_signature
+        if mime_data and mime_data.hasHtml():
+            html_signature = (mime_data.html() or "")[:1024]
+
+        return text, image_key, url_signature, html_signature
 
     def _extract_first_image_from_urls(self, urls):
         """从 URL 列表里提取第一个本地图片路径"""
@@ -203,6 +221,82 @@ class ClipboardMonitor(QObject):
             img = QImage(path)
             if not img.isNull():
                 return img
+        except Exception:
+            pass
+        return None
+
+    def _try_extract_image_from_html(self, html: str):
+        """从 HTML 里提取 img src 并尝试加载"""
+        if not html:
+            return None, ""
+
+        m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html, flags=re.IGNORECASE)
+        if not m:
+            return None, ""
+
+        src = m.group(1).strip()
+        return self._load_image_from_src(src)
+
+    def _try_extract_image_from_text(self, text: str):
+        """从纯文本里识别 data URI 或 http(s) 图片地址"""
+        if not text:
+            return None, ""
+
+        src = text.strip()
+        if src.startswith("data:image/") or src.startswith("http://") or src.startswith("https://"):
+            return self._load_image_from_src(src)
+
+        return None, ""
+
+    def _load_image_from_src(self, src: str):
+        """从 data URI / http(s) URL 加载 QImage"""
+        # data:image/...;base64,xxxx
+        if src.startswith("data:image/"):
+            image = self._load_image_from_data_uri(src)
+            if image is not None:
+                return image, "Copied Web Image"
+            return None, ""
+
+        # 远程图片 URL
+        if src.startswith("http://") or src.startswith("https://"):
+            image = self._load_image_from_http(src)
+            if image is not None:
+                label = src.split("/")[-1].split("?")[0].strip() or "Web Image"
+                return image, f"Copied {label}"
+            return None, ""
+
+        return None, ""
+
+    def _load_image_from_data_uri(self, src: str):
+        try:
+            if ";base64," not in src:
+                return None
+            b64 = src.split(";base64,", 1)[1]
+            data = base64.b64decode(b64, validate=False)
+            img = QImage()
+            if img.loadFromData(data):
+                return img
+        except Exception:
+            pass
+        return None
+
+    def _load_image_from_http(self, url: str):
+        """下载远程图片并转 QImage（带超时和大小限制）"""
+        try:
+            req = Request(url, headers={"User-Agent": "DoseCtrlC/1.0"})
+            with urlopen(req, timeout=1.2) as resp:
+                ctype = (resp.headers.get("Content-Type") or "").lower()
+                if "image" not in ctype:
+                    return None
+
+                max_bytes = 3 * 1024 * 1024
+                data = resp.read(max_bytes + 1)
+                if len(data) > max_bytes:
+                    return None
+
+                img = QImage()
+                if img.loadFromData(data):
+                    return img
         except Exception:
             pass
         return None

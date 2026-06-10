@@ -21,7 +21,7 @@ import random
 import time
 from enum import Enum, auto
 from PySide6.QtCore import QTimer, Qt, QEasingCurve, Signal
-from PySide6.QtGui import QPainter, QColor, QLinearGradient, QRadialGradient, QPen, QFont, QImage, QPixmap
+from PySide6.QtGui import QPainter, QColor, QLinearGradient, QRadialGradient, QPen, QFont, QImage, QPixmap, QPainterPath
 from PySide6.QtWidgets import QWidget
 
 from config import COLORS, SIZES, ANIMATION_DURATION, BLOCK_CHARS, SCRAMBLE_CHARS
@@ -91,11 +91,12 @@ class FeedbackWidget(QWidget):
         self._scramble_timer.setInterval(16)
 
         # 图片像素扰动参数
-        self._image_box_size = 96
+        self._image_box_size = 120
+        self._image_corner_radius = 16
         self._image_scramble_progress = 0.0
         self._image_scramble_timer = QTimer(self)
         self._image_scramble_timer.timeout.connect(self._image_scramble_tick)
-        self._image_scramble_timer.setInterval(33)
+        self._image_scramble_timer.setInterval(40)
         
         # 设置窗口属性
         self.setWindowFlags(
@@ -296,7 +297,7 @@ class FeedbackWidget(QWidget):
             self._image_scramble_timer.stop()
             return
 
-        self._image_scramble_progress = min(1.0, self._image_scramble_progress + 0.03)
+        self._image_scramble_progress = min(1.0, self._image_scramble_progress + 0.04)
         if self._image_scramble_progress >= 1.0:
             self._image_scramble_timer.stop()
         self.update()
@@ -410,7 +411,7 @@ class FeedbackWidget(QWidget):
 
             src_img = self._image
             if self._image_scramble_progress < 1.0:
-                block = max(3, int(32 * ((1.0 - self._image_scramble_progress) ** 2)))
+                block = max(5, int(40 * ((1.0 - self._image_scramble_progress) ** 2)))
                 small_w = max(1, img_size // block)
                 small_h = max(1, img_size // block)
 
@@ -427,20 +428,37 @@ class FeedbackWidget(QWidget):
                 )
                 pixmap = QPixmap.fromImage(pixelated)
             else:
-                smooth = src_img.scaled(
+                # 结束阶段保留轻微像素感，避免过高清
+                final_img = src_img.scaled(
                     img_size,
                     img_size,
                     Qt.KeepAspectRatioByExpanding,
-                    Qt.SmoothTransformation
+                    Qt.FastTransformation
                 )
-                pixmap = QPixmap.fromImage(smooth)
+                pixmap = QPixmap.fromImage(final_img)
 
             painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
             painter.setBrush(QColor(17, 17, 17, 220))
-            painter.drawRoundedRect(int(img_x), int(img_y), img_size, img_size, 8, 8)
+            painter.drawRoundedRect(
+                int(img_x),
+                int(img_y),
+                img_size,
+                img_size,
+                self._image_corner_radius,
+                self._image_corner_radius
+            )
 
             painter.save()
-            painter.setClipRect(int(img_x), int(img_y), img_size, img_size)
+            clip_path = QPainterPath()
+            clip_path.addRoundedRect(
+                float(img_x),
+                float(img_y),
+                float(img_size),
+                float(img_size),
+                float(self._image_corner_radius),
+                float(self._image_corner_radius)
+            )
+            painter.setClipPath(clip_path)
             painter.drawPixmap(int(img_x), int(img_y), pixmap)
             painter.restore()
 
