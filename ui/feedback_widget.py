@@ -302,6 +302,23 @@ class FeedbackWidget(QWidget):
             self._image_scramble_timer.stop()
         self.update()
 
+    def _get_image_vanish_ratio(self) -> float:
+        """图片消失比例：1=完整显示，0=完全收缩"""
+        if not self._has_image:
+            return 0.0
+
+        if self._state == AnimationState.BOX_SHRINK:
+            base = max(float(self._target_width), 1.0)
+            return max(0.0, min(1.0, float(self._box_width) / base))
+
+        if self._state == AnimationState.LINE_SHRINK:
+            return 0.06
+
+        if self._state == AnimationState.DOT_DISAPPEAR:
+            return max(0.0, min(1.0, float(self._dot_scale))) * 0.06
+
+        return 1.0
+
     def move_to_position(self, x: float, y: float):
         """移动窗口到指定位置（相对于鼠标）"""
         # 圆点在鼠标位置偏移处
@@ -402,65 +419,74 @@ class FeedbackWidget(QWidget):
         
         # 绘制图片区域（COPY 类型）
         if self._feedback_type == FeedbackType.COPY and self._has_image:
-            img_x = dot_cx
-            img_y = dot_cy + SIZES['box_height'] + 8
+            base_x = dot_cx
+            base_y = dot_cy + SIZES['box_height'] + 8
             if self._target_width <= 0:
-                img_y = dot_cy + 8
+                base_y = dot_cy + 8
 
-            img_size = self._image_box_size
+            base_size = self._image_box_size
+            vanish_ratio = self._get_image_vanish_ratio()
 
-            src_img = self._image
-            if self._image_scramble_progress < 1.0:
-                block = max(5, int(40 * ((1.0 - self._image_scramble_progress) ** 2)))
-                small_w = max(1, img_size // block)
-                small_h = max(1, img_size // block)
+            if vanish_ratio > 0.002:
+                src_img = self._image
+                if self._image_scramble_progress < 1.0:
+                    block = max(5, int(40 * ((1.0 - self._image_scramble_progress) ** 2)))
+                    small_w = max(1, base_size // block)
+                    small_h = max(1, base_size // block)
 
-                pixelated = src_img.scaled(
-                    small_w,
-                    small_h,
-                    Qt.KeepAspectRatioByExpanding,
-                    Qt.FastTransformation
-                ).scaled(
-                    img_size,
-                    img_size,
-                    Qt.KeepAspectRatioByExpanding,
-                    Qt.FastTransformation
+                    pixelated = src_img.scaled(
+                        small_w,
+                        small_h,
+                        Qt.KeepAspectRatioByExpanding,
+                        Qt.FastTransformation
+                    ).scaled(
+                        base_size,
+                        base_size,
+                        Qt.KeepAspectRatioByExpanding,
+                        Qt.FastTransformation
+                    )
+                    pixmap = QPixmap.fromImage(pixelated)
+                else:
+                    # 结束阶段保留轻微像素感，避免过高清
+                    final_img = src_img.scaled(
+                        base_size,
+                        base_size,
+                        Qt.KeepAspectRatioByExpanding,
+                        Qt.FastTransformation
+                    )
+                    pixmap = QPixmap.fromImage(final_img)
+
+                draw_size = max(2, int(base_size * vanish_ratio))
+                draw_x = int(base_x + (dot_cx - base_x) * (1.0 - vanish_ratio))
+                draw_y = int(base_y + (dot_cy - base_y) * (1.0 - vanish_ratio))
+                draw_radius = max(2.0, self._image_corner_radius * vanish_ratio)
+
+                painter.save()
+                painter.setOpacity(vanish_ratio)
+
+                painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
+                painter.setBrush(QColor(17, 17, 17, 220))
+                painter.drawRoundedRect(
+                    int(draw_x),
+                    int(draw_y),
+                    draw_size,
+                    draw_size,
+                    draw_radius,
+                    draw_radius
                 )
-                pixmap = QPixmap.fromImage(pixelated)
-            else:
-                # 结束阶段保留轻微像素感，避免过高清
-                final_img = src_img.scaled(
-                    img_size,
-                    img_size,
-                    Qt.KeepAspectRatioByExpanding,
-                    Qt.FastTransformation
+
+                clip_path = QPainterPath()
+                clip_path.addRoundedRect(
+                    float(draw_x),
+                    float(draw_y),
+                    float(draw_size),
+                    float(draw_size),
+                    float(draw_radius),
+                    float(draw_radius)
                 )
-                pixmap = QPixmap.fromImage(final_img)
-
-            painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
-            painter.setBrush(QColor(17, 17, 17, 220))
-            painter.drawRoundedRect(
-                int(img_x),
-                int(img_y),
-                img_size,
-                img_size,
-                self._image_corner_radius,
-                self._image_corner_radius
-            )
-
-            painter.save()
-            clip_path = QPainterPath()
-            clip_path.addRoundedRect(
-                float(img_x),
-                float(img_y),
-                float(img_size),
-                float(img_size),
-                float(self._image_corner_radius),
-                float(self._image_corner_radius)
-            )
-            painter.setClipPath(clip_path)
-            painter.drawPixmap(int(img_x), int(img_y), pixmap)
-            painter.restore()
+                painter.setClipPath(clip_path)
+                painter.drawPixmap(int(draw_x), int(draw_y), draw_size, draw_size, pixmap)
+                painter.restore()
 
         painter.end()
         
