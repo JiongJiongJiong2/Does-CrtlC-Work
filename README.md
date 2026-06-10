@@ -82,10 +82,7 @@ Output exe location: `dist/DoesCtrlCWork.exe`.
 > Note: `keyboard` library requires **Administrator privileges** for global hotkey detection on Windows.  
 > Right-click the exe and choose "Run as administrator".
 
-## New Release Description (Template)
-
-Use this directly for your next release:
-
+## New Release Description
 ### v2.0.0 — Image-aware Clipboard Feedback + Silent Mode
 
 This release upgrades Dose Ctrl+C from text-only feedback to rich clipboard feedback with image support and improved runtime control.
