@@ -21,7 +21,7 @@ import random
 import time
 from enum import Enum, auto
 from PySide6.QtCore import QTimer, Qt, QEasingCurve, Signal
-from PySide6.QtGui import QPainter, QColor, QLinearGradient, QRadialGradient, QPen, QFont, QFontMetrics
+from PySide6.QtGui import QPainter, QColor, QLinearGradient, QRadialGradient, QPen, QFont, QImage, QPixmap
 from PySide6.QtWidgets import QWidget
 
 from config import COLORS, SIZES, ANIMATION_DURATION, BLOCK_CHARS, SCRAMBLE_CHARS
@@ -50,11 +50,13 @@ class FeedbackWidget(QWidget):
     
     animation_complete = Signal()
     
-    def __init__(self, feedback_type: FeedbackType, text: str = "", parent=None):
+    def __init__(self, feedback_type: FeedbackType, text: str = "", image: QImage = None, parent=None):
         super().__init__(parent)
         
         self._feedback_type = feedback_type
         self._text = text
+        self._image = image.copy() if isinstance(image, QImage) and not image.isNull() else None
+        self._has_image = self._image is not None
         self._state = AnimationState.IDLE
         self._active = True
         
@@ -87,6 +89,13 @@ class FeedbackWidget(QWidget):
         self._scramble_timer = QTimer(self)
         self._scramble_timer.timeout.connect(self._scramble_tick)
         self._scramble_timer.setInterval(16)
+
+        # 图片像素扰动参数
+        self._image_box_size = 96
+        self._image_scramble_progress = 0.0
+        self._image_scramble_timer = QTimer(self)
+        self._image_scramble_timer.timeout.connect(self._image_scramble_tick)
+        self._image_scramble_timer.setInterval(33)
         
         # 设置窗口属性
         self.setWindowFlags(
@@ -98,10 +107,16 @@ class FeedbackWidget(QWidget):
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         
-        # 计算窗口尺寸 - 圆点在上，黑框在下
-        max_w = int(self._target_width + 40) if self._target_width else 100
-        max_h = int(SIZES['box_height'] + SIZES['dot_radius'] * 2 + 30)  # 圆点高度 + 框高度 + 间距
-        self.setFixedSize(max(max_w, 500), max(max_h, 100))
+        # 计算窗口尺寸 - 圆点在上，黑框/图片在下
+        content_w = int(self._target_width + 40) if self._target_width else 100
+        image_w = self._image_box_size + 40 if self._has_image else 0
+        max_w = max(content_w, image_w, 220)
+
+        max_h = int(SIZES['box_height'] + SIZES['dot_radius'] * 2 + 30)
+        if self._has_image:
+            max_h += self._image_box_size + 12
+
+        self.setFixedSize(max(max_w, 500), max(max_h, 140))
         
         # 动画定时器
         self._anim_timer = QTimer(self)
@@ -127,6 +142,9 @@ class FeedbackWidget(QWidget):
         self._start_property_animation('dot_scale', 0.0, 1.0,
                                         ANIMATION_DURATION['dot_appear'],
                                         QEasingCurve(QEasingCurve.OutBack))
+        if self._has_image:
+            self._image_scramble_progress = 0.0
+            self._image_scramble_timer.start()
         self.show()
         
     def _start_property_animation(self, prop: str, start: float, end: float,
@@ -173,11 +191,15 @@ class FeedbackWidget(QWidget):
             
         if self._state == AnimationState.DOT_APPEAR:
             if self._feedback_type == FeedbackType.COPY:
-                self._state = AnimationState.BOX_EXPAND
-                self._box_opacity = 1.0
-                self._start_property_animation('box_width', 0.0, self._target_width,
-                                                ANIMATION_DURATION['box_expand'],
-                                                QEasingCurve(QEasingCurve.OutQuad))
+                if self._target_width > 0:
+                    self._state = AnimationState.BOX_EXPAND
+                    self._box_opacity = 1.0
+                    self._start_property_animation('box_width', 0.0, self._target_width,
+                                                    ANIMATION_DURATION['box_expand'],
+                                                    QEasingCurve(QEasingCurve.OutQuad))
+                else:
+                    self._state = AnimationState.VIEWING
+                    self._state_timer.start(ANIMATION_DURATION['view_time'])
             else:
                 self._state = AnimationState.VIEWING
                 self._state_timer.start(ANIMATION_DURATION['error_display'])
@@ -228,6 +250,11 @@ class FeedbackWidget(QWidget):
             
     def _start_scramble_text(self):
         """开始文字解码动画"""
+        if not self._text:
+            self._state = AnimationState.VIEWING
+            self._state_timer.start(ANIMATION_DURATION['view_time'])
+            return
+
         self._state = AnimationState.TEXT_REVEAL
         self._scramble_start_time = time.time() * 1000
         self._scramble_timer.start()
@@ -263,6 +290,17 @@ class FeedbackWidget(QWidget):
             
         self.update()
         
+    def _image_scramble_tick(self):
+        """图片扰动动画进度更新"""
+        if not self._active:
+            self._image_scramble_timer.stop()
+            return
+
+        self._image_scramble_progress = min(1.0, self._image_scramble_progress + 0.03)
+        if self._image_scramble_progress >= 1.0:
+            self._image_scramble_timer.stop()
+        self.update()
+
     def move_to_position(self, x: float, y: float):
         """移动窗口到指定位置（相对于鼠标）"""
         # 圆点在鼠标位置偏移处
@@ -361,6 +399,51 @@ class FeedbackWidget(QWidget):
                 text_y = box_y + box_h / 2 + 4  # 垂直居中偏移
                 painter.drawText(int(box_x + 10), int(text_y), self._display_text)
         
+        # 绘制图片区域（COPY 类型）
+        if self._feedback_type == FeedbackType.COPY and self._has_image:
+            img_x = dot_cx
+            img_y = dot_cy + SIZES['box_height'] + 8
+            if self._target_width <= 0:
+                img_y = dot_cy + 8
+
+            img_size = self._image_box_size
+
+            src_img = self._image
+            if self._image_scramble_progress < 1.0:
+                block = max(3, int(32 * ((1.0 - self._image_scramble_progress) ** 2)))
+                small_w = max(1, img_size // block)
+                small_h = max(1, img_size // block)
+
+                pixelated = src_img.scaled(
+                    small_w,
+                    small_h,
+                    Qt.KeepAspectRatioByExpanding,
+                    Qt.FastTransformation
+                ).scaled(
+                    img_size,
+                    img_size,
+                    Qt.KeepAspectRatioByExpanding,
+                    Qt.FastTransformation
+                )
+                pixmap = QPixmap.fromImage(pixelated)
+            else:
+                smooth = src_img.scaled(
+                    img_size,
+                    img_size,
+                    Qt.KeepAspectRatioByExpanding,
+                    Qt.SmoothTransformation
+                )
+                pixmap = QPixmap.fromImage(smooth)
+
+            painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
+            painter.setBrush(QColor(17, 17, 17, 220))
+            painter.drawRoundedRect(int(img_x), int(img_y), img_size, img_size, 8, 8)
+
+            painter.save()
+            painter.setClipRect(int(img_x), int(img_y), img_size, img_size)
+            painter.drawPixmap(int(img_x), int(img_y), pixmap)
+            painter.restore()
+
         painter.end()
         
     def stop(self):
@@ -368,5 +451,6 @@ class FeedbackWidget(QWidget):
         self._active = False
         self._anim_timer.stop()
         self._scramble_timer.stop()
+        self._image_scramble_timer.stop()
         self._state_timer.stop()
         self.close()

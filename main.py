@@ -21,6 +21,11 @@ class ClipboardFXApp:
     def __init__(self):
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)  # 关闭窗口不退出
+        self.app.setApplicationName("Dose Ctrl+C")
+        self.app.setApplicationDisplayName("Dose Ctrl+C")
+        self._set_windows_app_id()
+
+        self.silent_mode = False
         
         # 创建系统托盘
         self._setup_tray()
@@ -31,7 +36,7 @@ class ClipboardFXApp:
         
         # 剪贴板监听器
         self.clipboard_monitor = ClipboardMonitor()
-        self.clipboard_monitor.copy_success.connect(self._on_copy_success)
+        self.clipboard_monitor.copy_rich.connect(self._on_copy_success)
         self.clipboard_monitor.copy_failed.connect(self._on_copy_failed)
         self.clipboard_monitor.paste_detected.connect(self._on_paste)
         
@@ -42,8 +47,9 @@ class ClipboardFXApp:
         self._mouse_x = 0
         self._mouse_y = 0
         
-        # 全局快捷键：Ctrl+Shift+Q 退出
+        # 全局快捷键
         keyboard.add_hotkey('ctrl+shift+q', self._quit, suppress=False)
+        keyboard.add_hotkey('ctrl+shift+m', self._toggle_silent_mode, suppress=False)
         
     def _setup_tray(self):
         """设置系统托盘"""
@@ -57,12 +63,17 @@ class ClipboardFXApp:
         menu = QMenu()
         
         # 显示状态
-        status_action = QAction("状态: 运行中", menu)
-        status_action.setEnabled(False)
-        menu.addAction(status_action)
-        
+        self.status_action = QAction("状态: 运行中（提示开启）", menu)
+        self.status_action.setEnabled(False)
+        menu.addAction(self.status_action)
+
+        # 切换静默模式
+        self.toggle_silent_action = QAction("切换静默模式 (Ctrl+Shift+M)", menu)
+        self.toggle_silent_action.triggered.connect(self._toggle_silent_mode)
+        menu.addAction(self.toggle_silent_action)
+
         menu.addSeparator()
-        
+
         # 退出
         quit_action = QAction("退出", menu)
         quit_action.triggered.connect(self._quit)
@@ -70,6 +81,7 @@ class ClipboardFXApp:
         
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self._on_tray_activated)
+        self._update_tray_status()
         
     def _create_tray_icon(self) -> QIcon:
         """创建托盘图标"""
@@ -100,9 +112,9 @@ class ClipboardFXApp:
         if self._current_widget and self._current_widget._active:
             self._current_widget.move_to_position(x, y)
             
-    def _on_copy_success(self, text: str):
+    def _on_copy_success(self, text: str, image=None):
         """复制成功回调"""
-        self._show_feedback(FeedbackType.COPY, text)
+        self._show_feedback(FeedbackType.COPY, text, image)
         
     def _on_copy_failed(self):
         """复制失败回调"""
@@ -112,15 +124,18 @@ class ClipboardFXApp:
         """粘贴回调"""
         self._show_feedback(FeedbackType.PASTE)
         
-    def _show_feedback(self, feedback_type: FeedbackType, text: str = ""):
+    def _show_feedback(self, feedback_type: FeedbackType, text: str = "", image=None):
         """显示反馈动画"""
+        if self.silent_mode:
+            return
+
         # 如果有正在进行的动画，先停止
         if self._current_widget:
             self._current_widget.stop()
             self._current_widget.deleteLater()
-            
+
         # 创建新的反馈窗口
-        self._current_widget = FeedbackWidget(feedback_type, text)
+        self._current_widget = FeedbackWidget(feedback_type, text, image=image)
         self._current_widget.animation_complete.connect(self._on_animation_complete)
         
         # 设置初始位置
@@ -135,6 +150,34 @@ class ClipboardFXApp:
             self._current_widget.deleteLater()
             self._current_widget = None
             
+    def _toggle_silent_mode(self):
+        """切换静默模式"""
+        self.silent_mode = not self.silent_mode
+        if self.silent_mode and self._current_widget:
+            self._current_widget.stop()
+            self._current_widget.deleteLater()
+            self._current_widget = None
+        self._update_tray_status()
+
+    def _update_tray_status(self):
+        """更新托盘状态显示"""
+        if self.silent_mode:
+            self.status_action.setText("状态: 运行中（静默）")
+            self.tray.setToolTip("Dose Ctrl+C - 静默运行中")
+        else:
+            self.status_action.setText("状态: 运行中（提示开启）")
+            self.tray.setToolTip("Dose Ctrl+C - 剪贴板反馈")
+
+    def _set_windows_app_id(self):
+        """设置 Windows 任务栏显示标识"""
+        if not sys.platform.startswith("win"):
+            return
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DoseCtrlC.App")
+        except Exception:
+            pass
+
     def run(self):
         """运行应用"""
         # 显示托盘图标
