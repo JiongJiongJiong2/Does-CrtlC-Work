@@ -1,18 +1,21 @@
-# TMP 原型文件
-TMP/
-
 # PyInstaller 打包产物
-dose-ctrlc/build/
-dose-ctrlc/dist/
-dose-ctrlc/*.spec
+build/
+dist/
+*.spec
+*.toc
+*.manifest
+*.pkg
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
 *.egg-info/
+.pytest_cache/
 .venv/
 venv/
+env/
 
 # IDE
 .vscode/
@@ -24,5 +27,5 @@ venv/
 Thumbs.db
 desktop.ini
 
-# ico (可选，如果不想包含二进制图标)
-# dose-ctrlc/app_icon.ico
+# 本地临时文件
+TMP/
