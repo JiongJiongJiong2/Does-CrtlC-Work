@@ -5,6 +5,7 @@ dist/
 *.toc
 *.manifest
 *.pkg
+*.zip
 
 # Python
 __pycache__/

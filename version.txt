@@ -15,13 +15,13 @@ VSVersionInfo(
         StringTable(
           '080404B0',
           [
-            StringStruct('CompanyName', 'Dose Ctrl+C'),
-            StringStruct('FileDescription', 'Dose Ctrl+C Clipboard Feedback'),
+            StringStruct('CompanyName', 'Does Ctrl+C Work'),
+            StringStruct('FileDescription', 'Does Ctrl+C Work Clipboard Feedback'),
             StringStruct('FileVersion', '1.0.1.0'),
-            StringStruct('InternalName', 'DoseCtrlC'),
+            StringStruct('InternalName', 'DoesCtrl+CWork'),
             StringStruct('LegalCopyright', 'Copyright (C) 2026'),
-            StringStruct('OriginalFilename', 'DoseCtrlC.exe'),
-            StringStruct('ProductName', 'Dose Ctrl+C'),
+            StringStruct('OriginalFilename', 'Does-Ctrl+C-Work.exe'),
+            StringStruct('ProductName', 'Does Ctrl+C Work'),
             StringStruct('ProductVersion', '1.0.1.0')
           ]
         )
