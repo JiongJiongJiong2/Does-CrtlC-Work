@@ -7,11 +7,20 @@ ANIMATION_DURATION = {
     'dot_appear': 200,        # 圆点出现
     'box_expand': 250,        # 框展开
     'text_scramble': 1000,    # 文字解码
-    'view_time': 2800,        # 展示时间
+    'view_time': 2800,        # 展示时间（非 holding 模式）
     'box_shrink': 350,        # 框收缩成线
     'line_shrink': 250,       # 线收缩回圆点
     'dot_disappear': 200,     # 圆点消失
     'error_display': 700,     # 错误/粘贴显示时间
+    'stack_appear': 220,      # 堆叠层弹出
+    'stack_retract': 220,     # 堆叠层回收
+    'holding_max': 30000,     # holding 模式最大持有时长
+}
+
+# 剪贴板检测参数
+CLIPBOARD_CHECK = {
+    'retry_delays': [40, 120, 260],   # 多次采样延迟(ms)
+    'same_content_as_success': True,   # 同内容复制也视为成功
 }
 
 # 颜色配置
@@ -40,6 +49,18 @@ SIZES = {
 SPRING = {
     'stiffness': 1500,
     'damping': 70,
+}
+
+# 多图堆叠参数
+IMAGE_STACK = {
+    'max_display': 3,           # 最多显示堆叠层数
+    'offset_x': 10,             # 每层 X 偏移
+    'offset_y': -10,            # 每层 Y 偏移
+    'rotate_per_layer': 3.0,    # 每层旋转角度
+    'opacity_layer1': 0.65,     # 第1层透明度
+    'opacity_layer2': 0.40,     # 第2层透明度
+    'border_color': (255, 255, 255, 25),  # 堆叠层边框色
+    'bg_color': (20, 20, 23, 240),        # 堆叠层背景色
 }
 
 # 文本截断长度

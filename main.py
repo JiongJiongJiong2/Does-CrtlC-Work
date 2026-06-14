@@ -39,6 +39,9 @@ class ClipboardFXApp:
         self.clipboard_monitor.copy_rich.connect(self._on_copy_success)
         self.clipboard_monitor.copy_failed.connect(self._on_copy_failed)
         self.clipboard_monitor.paste_detected.connect(self._on_paste)
+
+        # 是否启用 holding 模式（复制后持留到粘贴才退场）
+        self._holding_mode = True
         
         # 当前活动的反馈窗口
         self._current_widget = None
@@ -112,9 +115,9 @@ class ClipboardFXApp:
         if self._current_widget and self._current_widget._active:
             self._current_widget.move_to_position(x, y)
             
-    def _on_copy_success(self, text: str, image=None):
+    def _on_copy_success(self, text: str, images=None, image_count: int = 0):
         """复制成功回调"""
-        self._show_feedback(FeedbackType.COPY, text, image)
+        self._show_feedback(FeedbackType.COPY, text, images=images, image_count=image_count)
         
     def _on_copy_failed(self):
         """复制失败回调"""
@@ -122,9 +125,16 @@ class ClipboardFXApp:
         
     def _on_paste(self):
         """粘贴回调"""
+        # 如果当前有 holding 状态的复制动画，触发退场
+        if self._current_widget and self._current_widget._active:
+            if hasattr(self._current_widget, 'start_exit'):
+                self._current_widget.start_exit()
+                return
+
         self._show_feedback(FeedbackType.PASTE)
         
-    def _show_feedback(self, feedback_type: FeedbackType, text: str = "", image=None):
+    def _show_feedback(self, feedback_type: FeedbackType, text: str = "",
+                       images=None, image_count: int = 0):
         """显示反馈动画"""
         if self.silent_mode:
             return
@@ -134,8 +144,14 @@ class ClipboardFXApp:
             self._current_widget.stop()
             self._current_widget.deleteLater()
 
-        # 创建新的反馈窗口
-        self._current_widget = FeedbackWidget(feedback_type, text, image=image)
+        # 创建新的反馈窗口（含 holding 模式和多图支持）
+        is_holding = self._holding_mode and feedback_type == FeedbackType.COPY
+        self._current_widget = FeedbackWidget(
+            feedback_type, text,
+            images=images,
+            image_count=image_count,
+            holding_mode=is_holding
+        )
         self._current_widget.animation_complete.connect(self._on_animation_complete)
         
         # 设置初始位置
