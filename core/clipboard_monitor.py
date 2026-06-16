@@ -169,34 +169,34 @@ class ClipboardMonitor(QObject):
                     self.copy_rich.emit(dt, images, est)
 
                     if file_paths or data_uris or http_urls:
-                        self._start_worker(http_urls, data_uris, file_paths, len(images))
+                        self._start_worker(http_urls, data_uris, file_paths, images)
                     return
 
             self._retry_sample()
         except:
             self._retry_sample()
 
-    def _start_worker(self, http_urls, data_uris, file_paths, already_have):
+    def _start_worker(self, http_urls, data_uris, file_paths, existing_images):
         if self._image_worker and self._image_worker.isRunning():
             self._image_worker.quit()
             self._image_worker.wait(500)
         self._image_worker = _ImageDataWorker(self)
         self._image_worker.set_tasks(http_urls, data_uris, file_paths)
-        self._worker_already_have = already_have
+        self._worker_existing_images = existing_images  # 保存快速路径已有的图片
         self._image_worker.raw_images_ready.connect(self._on_raw_ready)
         self._image_worker.start()
 
     def _on_raw_ready(self, raw_list):
-        """主线程回调：bytes → QImage"""
-        if not raw_list: return
-        images = []
+        """主线程回调：bytes → QImage，合并快速路径图片"""
+        new_images = []
         for data in raw_list:
             img = QImage()
             if img.loadFromData(data):
-                images.append(self._safe_copy(img))
-        if images:
-            total = self._worker_already_have + len(images)
-            self.images_updated.emit(images, total)
+                new_images.append(self._safe_copy(img))
+        # 合并：快速路径图片 + Worker 新提取的图片
+        all_images = self._worker_existing_images + new_images
+        if all_images:
+            self.images_updated.emit(all_images, len(all_images))
 
     def _retry_sample(self):
         delays = CLIPBOARD_CHECK.get('retry_delays', [40, 120, 260])

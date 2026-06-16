@@ -54,11 +54,12 @@ SPRING = {
 # 多图堆叠参数
 IMAGE_STACK = {
     'max_display': 3,           # 最多显示堆叠层数
-    'offset_x': 10,             # 每层 X 偏移
-    'offset_y': -10,            # 每层 Y 偏移
-    'rotate_per_layer': 3.0,    # 每层旋转角度
-    'opacity_layer1': 0.65,     # 第1层透明度
-    'opacity_layer2': 0.40,     # 第2层透明度
+    'show_real_thumbnails': True,  # 堆叠层是否显示真实缩略图（False=仅半透明圆角方块）
+    'offset_x': 14,             # 每层 X 偏移（向右，需足够大以露出边缘）
+    'offset_y': 14,             # 每层 Y 偏移（向下，需足够大以露出边缘）
+    'rotate_per_layer': 3.0,    # 每层旋转角度（以右下角为圆心，微旋转）
+    'opacity_layer1': 0.95,     # 第1层透明度
+    'opacity_layer2': 0.90,     # 第2层透明度
     'border_color': (255, 255, 255, 25),  # 堆叠层边框色
     'bg_color': (20, 20, 23, 240),        # 堆叠层背景色
 }

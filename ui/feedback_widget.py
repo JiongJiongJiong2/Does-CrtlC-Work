@@ -385,7 +385,7 @@ class FeedbackWidget(QWidget):
         self._state = AnimationState.TEXT_REVEAL
         self._scramble_start_time = time.time() * 1000
         self._scramble_timer.start()
-        self._state_timer.start(ANIMATION_DURATION['text_scramble'] + ANIMATION_DURATION['view_time'])
+        # 不在此设置 _state_timer — scramble 完成后由 _scramble_tick 触发状态转换
 
     def _scramble_tick(self):
         now = time.time() * 1000
@@ -412,6 +412,9 @@ class FeedbackWidget(QWidget):
         if progress >= 1.0:
             self._display_text = self._text
             self._scramble_timer.stop()
+            # scramble 完成，触发状态转换
+            if self._state == AnimationState.TEXT_REVEAL:
+                self._advance_state()
         self.update()
 
     def _image_scramble_tick(self):
@@ -512,12 +515,12 @@ class FeedbackWidget(QWidget):
             vanish_ratio = self._get_image_vanish_ratio()
 
             if vanish_ratio > 0.002:
-                # 绘制堆叠背景层（从后往前：layer2 -> layer1）
+                # 先绘制堆叠层（底层，从后往前：layer2 -> layer1）
                 stack_layers = self._image_count - 1  # 主图不算
                 for layer_idx in range(min(stack_layers, 2) - 1, -1, -1):
                     self._draw_stack_layer(painter, base_x, base_y, base_size, layer_idx)
 
-                # 绘制主图
+                # 再绘制主图（最上层，覆盖堆叠层的大部分，只露出右下角边缘）
                 self._draw_main_image(painter, base_x, base_y, base_size, vanish_ratio)
 
         painter.end()
@@ -544,13 +547,13 @@ class FeedbackWidget(QWidget):
         painter.save()
         painter.setOpacity(opacity)
 
-        # 旋转
+        # 旋转圆心：主图右下角（让堆叠层从右下角微露出来）
         transform = QTransform()
-        cx = sx + base_size / 2
-        cy = sy + base_size / 2
-        transform.translate(cx, cy)
+        pivot_x = base_x + base_size  # 主图右下角 X
+        pivot_y = base_y + base_size  # 主图右下角 Y
+        transform.translate(pivot_x, pivot_y)
         transform.rotate(rotate)
-        transform.translate(-cx, -cy)
+        transform.translate(-pivot_x, -pivot_y)
         painter.setTransform(transform)
 
         # 背景
@@ -561,9 +564,10 @@ class FeedbackWidget(QWidget):
         painter.drawRoundedRect(int(sx), int(sy), base_size, base_size,
                                self._image_corner_radius, self._image_corner_radius)
 
-        # 如果有额外图片，显示缩略图
+        # 根据 show_real_thumbnails 开关决定是否渲染真实缩略图
+        show_real = cfg.get('show_real_thumbnails', False)
         img_idx = layer_idx + 1  # 0=主图, 1=第一层, 2=第二层
-        if img_idx < len(self._images):
+        if show_real and img_idx < len(self._images):
             img = self._images[img_idx]
             scaled = img.scaled(base_size, base_size,
                                Qt.KeepAspectRatioByExpanding, Qt.FastTransformation)
@@ -575,6 +579,7 @@ class FeedbackWidget(QWidget):
             painter.setClipPath(clip)
             painter.setOpacity(opacity * 0.5)  # 堆叠层图片半透明
             painter.drawPixmap(int(sx), int(sy), pixmap)
+        # else: 仅显示半透明圆角方块背景（已绘制）
 
         painter.restore()
 
@@ -582,19 +587,13 @@ class FeedbackWidget(QWidget):
         """绘制主图（含像素化/收缩动画）"""
         src_img = self._main_image
         if src_img is None:
-            # 等待异步图片时绘制占位框
-            dot_cx = 5
-            dot_cy = 5
-            draw_size = max(2, int(base_size * vanish_ratio))
-            draw_x = int(base_x + (dot_cx - base_x) * (1.0 - vanish_ratio))
-            draw_y = int(base_y + (dot_cy - base_y) * (1.0 - vanish_ratio))
-            draw_radius = max(2.0, self._image_corner_radius * vanish_ratio)
+            # 主图未加载时绘制占位框（简洁半透明圆角方块）
             painter.save()
-            painter.setOpacity(vanish_ratio * 0.4)
-            painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
-            painter.setBrush(QColor(17, 17, 17, 180))
-            painter.drawRoundedRect(int(draw_x), int(draw_y), draw_size, draw_size,
-                                   draw_radius, draw_radius)
+            painter.setOpacity(0.5)
+            painter.setPen(QPen(QColor(255, 255, 255, 20), 1))
+            painter.setBrush(QColor(30, 30, 35, 200))
+            painter.drawRoundedRect(int(base_x), int(base_y), base_size, base_size,
+                                   self._image_corner_radius, self._image_corner_radius)
             painter.restore()
             return
 
@@ -636,7 +635,7 @@ class FeedbackWidget(QWidget):
         painter.restore()
 
     def update_images(self, images, image_count: int):
-        """异步图片到达后更新图片数据（Bug 3: 延迟图片支持）"""
+        """异步图片到达后更新图片数据（追加模式）"""
         if not self._active:
             return
 
@@ -649,11 +648,18 @@ class FeedbackWidget(QWidget):
         if not new_images:
             return
 
-        self._images = new_images
+        # 追加模式：保留已有图片，添加新图片
+        for img in new_images:
+            self._images.append(img)
+
         self._image_count = min(image_count, IMAGE_STACK['max_display'])
         self._total_image_count = image_count
         self._has_image = True
-        self._main_image = self._images[0]
+        if self._images:
+            self._main_image = self._images[0]
+
+        # 不在此触发 STACK_APPEAR — 由 _advance_state 的 IMAGE_APPEAR 分支在正确时机触发
+        # update_images 只更新图片数据，让状态机在动画序列走到 IMAGE_APPEAR 时再启动堆叠
 
         # 重新计算窗口尺寸
         content_w = int(self._target_width + 40) if self._target_width else 100
