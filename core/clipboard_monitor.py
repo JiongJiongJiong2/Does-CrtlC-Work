@@ -144,10 +144,10 @@ class ClipboardMonitor(QObject):
                             if lp and self._is_img_file(lp):
                                 file_paths.append(lp)
 
-                    # 3) HTML 中的图片 src
+                    # 3) HTML 中的所有图片 src
                     if has_html:
-                        src = self._extract_src(md.html() or "")
-                        if src:
+                        srcs = self._extract_all_srcs(md.html() or "")
+                        for src in srcs:
                             if src.startswith("data:image/"): data_uris.append(src)
                             elif src.startswith(("http://","https://")): http_urls.append(src)
 
@@ -239,11 +239,11 @@ class ClipboardMonitor(QObject):
         _, ext = os.path.splitext(path.lower())
         return ext in exts
 
-    def _extract_src(self, html):
+    def _extract_all_srcs(self, html):
+        """提取 HTML 中所有 <img> 标签的 src 属性"""
         if not html:
-            return None
-        m = re.search(r'<img[^>]+src\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
-        return m.group(1) if m else None
+            return []
+        return re.findall(r'<img[^>]+src\s*=\s*["\']([^"\']+)["\']', html, re.IGNORECASE)
 
     def _norm_path(self, text):
         s = text.strip().strip('"').strip("'")

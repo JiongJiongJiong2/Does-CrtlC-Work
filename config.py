@@ -58,8 +58,8 @@ IMAGE_STACK = {
     'offset_x': 14,             # 每层 X 偏移（向右，需足够大以露出边缘）
     'offset_y': 14,             # 每层 Y 偏移（向下，需足够大以露出边缘）
     'rotate_per_layer': 3.0,    # 每层旋转角度（以右下角为圆心，微旋转）
-    'opacity_layer1': 0.95,     # 第1层透明度
-    'opacity_layer2': 0.90,     # 第2层透明度
+    'opacity_layer1': 0.70,     # 第1层透明度
+    'opacity_layer2': 0.65,     # 第2层透明度
     'border_color': (255, 255, 255, 25),  # 堆叠层边框色
     'bg_color': (20, 20, 23, 240),        # 堆叠层背景色
 }

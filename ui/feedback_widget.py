@@ -652,7 +652,8 @@ class FeedbackWidget(QWidget):
         for img in new_images:
             self._images.append(img)
 
-        self._image_count = min(image_count, IMAGE_STACK['max_display'])
+        # 注意：不修改 _image_count — 它代表复制时的预估图片总数，用于决定堆叠层数量
+        # 即使 Worker 只下载了部分图片，堆叠层仍应保持
         self._total_image_count = image_count
         self._has_image = True
         if self._images:
