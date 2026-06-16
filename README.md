@@ -19,12 +19,15 @@
 ## Features
 
 - **Copy Success (Text)** — Yellow indicator dot + expanding panel with scramble-text reveal.
-- **Copy Success (Image)** — 120x120 rounded thumbnail with pixel-style reveal animation.
+- **Copy Success (Image)** — 120×120 rounded thumbnail with pixel-style reveal animation.
+- **Multi-Image Stack** — When copying multiple images (2+), a stack effect fans out behind the main thumbnail, with configurable real-thumbnail or placeholder mode.
+- **Holding Mode** — Feedback animation stays on screen until a paste is detected or a timeout is reached, giving you confidence that the copy landed.
+- **Parallel Image Loading** — Web images are downloaded concurrently (up to 3 threads), reducing wait time for multi-image clipboard content.
 - **Image Exit Animation** — Thumbnail shrinks toward the yellow indicator dot and disappears in sync with text collapse.
 - **Web Image Compatibility** — Supports clipboard image extraction from:
   - Direct bitmap (`image/*`)
   - Local file URL/path (`text/uri-list`, `file:///...`)
-  - HTML `<img src=...>`
+  - HTML `<img src=...>` (all images extracted, not just the first)
   - `data:image/...;base64` and `http/https` image URL fallback
 - **Copy Failed** — Red indicator dot (no valid copied content detected).
 - **Paste Success** — Green indicator dot.
@@ -33,11 +36,15 @@
 - **System Tray Resident** — Background running with quick status and exit control.
 
 <p align="center">
-  <img src="Does-CtrlC-Work-recording.gif" alt="Does-CtrlC-Work-recording">
+  <img src="gif/Does-CtrlC-Work-recording.gif" alt="Does-CtrlC-Work-recording">
 </p>
 
 <p align="center">
-  <img src="RecordingpicFeatures.gif" alt="Does-CtrlC-Work-recording">
+  <img src="gif/RecordingpicFeatures.gif" alt="Does-CtrlC-Work-recording">
+</p>
+
+<p align="center">
+  <img src="gif/RecordingMultiImages-final1.gif" alt="Does-CtrlC-Work-recording">
 </p>
 
 ## Usage
@@ -45,7 +52,7 @@
 | Action | Effect |
 |--------|--------|
 | `Ctrl+C` (with text) | Yellow dot + text panel |
-| `Ctrl+C` (with image) | Yellow dot + image thumbnail (and optional text label) |
+| `Ctrl+C` (with image) | Yellow dot + image thumbnail + stack if multiple images |
 | `Ctrl+C` (no selection / unchanged clipboard) | Red dot (copy failed) |
 | `Ctrl+V` | Green dot (paste detected) |
 | `Ctrl+Shift+M` | Toggle Silent Mode (visual feedback on/off) |
@@ -83,20 +90,21 @@ Output exe location: `dist/DoesCtrlCWork.exe`.
 > Right-click the exe and choose "Run as administrator".
 
 ## New Release Description
-### v2.0.0 — Image-aware Clipboard Feedback + Silent Mode
+### v2.1.0 — Multi-Image Stack + Holding Mode + Parallel Loading
 
-This release upgrades Dose Ctrl+C from text-only feedback to rich clipboard feedback with image support and improved runtime control.
+This release adds multi-image visual feedback, a holding mode that waits for paste confirmation, and parallel image downloading for faster web image handling.
 
 **Highlights**
-- Added image copy feedback with pixel-style reveal and rounded 120x120 thumbnail.
-- Added synchronized exit animation: image now shrinks back toward the yellow indicator dot while text panel collapses.
-- Added Silent Mode hotkey (`Ctrl+Shift+M`) to disable visual feedback while keeping clipboard monitoring active.
-- Improved clipboard parsing for real-world sources:
-  - direct bitmap data
-  - local file URL/path
-  - HTML image source
-  - data URI / web image URL fallback
-- Improved Windows app identity and packaging metadata for cleaner executable presentation.
+- **Multi-Image Stack Animation** — When copying 2+ images (from file manager or web), additional images fan out behind the main thumbnail as a stack. Stack layers use spring-physics animation and can show either real thumbnails or translucent placeholders (configurable via `show_real_thumbnails`).
+- **Holding Mode** — Animation stays visible until a paste (`Ctrl+V`) is detected or a 30-second timeout is reached, giving clear confirmation that the copy-paste cycle completed.
+- **Parallel Image Download** — Web images are now fetched concurrently using `ThreadPoolExecutor` (up to 3 threads). Copying 3 web images takes ~0.8s instead of ~2.4s.
+- **Full HTML Image Extraction** — All `<img>` tags in clipboard HTML are now extracted (previously only the first), so multi-image web copies are correctly detected.
+- **Configurable Placeholder Opacity** — Image placeholder transparency is now adjustable via `placeholder_opacity` in `IMAGE_STACK` config.
+
+**Bug Fixes**
+- Fixed stack animation starting at wrong time (state machine timing issue).
+- Fixed stack placeholder layers disappearing after the first image loaded.
+- Fixed drawing order: main image now correctly renders on top of stack layers.
 
 **Notes**
 - For stable builds, package with `python -m PyInstaller` from the intended environment.
