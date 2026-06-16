@@ -26,6 +26,7 @@ class ClipboardFXApp:
         self._set_windows_app_id()
 
         self.silent_mode = False
+        self._holding_mode = False  # 必须在 _setup_tray 之前初始化
         
         # 创建系统托盘
         self._setup_tray()
@@ -39,10 +40,8 @@ class ClipboardFXApp:
         self.clipboard_monitor.copy_rich.connect(self._on_copy_success)
         self.clipboard_monitor.copy_failed.connect(self._on_copy_failed)
         self.clipboard_monitor.paste_detected.connect(self._on_paste)
+        self.clipboard_monitor.images_updated.connect(self._on_images_updated)
 
-        # 是否启用 holding 模式（复制后持留到粘贴才退场）
-        self._holding_mode = True
-        
         # 当前活动的反馈窗口
         self._current_widget = None
         
@@ -53,6 +52,7 @@ class ClipboardFXApp:
         # 全局快捷键
         keyboard.add_hotkey('ctrl+shift+q', self._quit, suppress=False)
         keyboard.add_hotkey('ctrl+shift+m', self._toggle_silent_mode, suppress=False)
+        keyboard.add_hotkey('ctrl+shift+h', self._toggle_holding_mode, suppress=False)
         
     def _setup_tray(self):
         """设置系统托盘"""
@@ -74,6 +74,11 @@ class ClipboardFXApp:
         self.toggle_silent_action = QAction("切换静默模式 (Ctrl+Shift+M)", menu)
         self.toggle_silent_action.triggered.connect(self._toggle_silent_mode)
         menu.addAction(self.toggle_silent_action)
+
+        # 切换 Holding 模式
+        self.toggle_holding_action = QAction("切换Holding模式 (Ctrl+Shift+H)", menu)
+        self.toggle_holding_action.triggered.connect(self._toggle_holding_mode)
+        menu.addAction(self.toggle_holding_action)
 
         menu.addSeparator()
 
@@ -118,6 +123,11 @@ class ClipboardFXApp:
     def _on_copy_success(self, text: str, images=None, image_count: int = 0):
         """复制成功回调"""
         self._show_feedback(FeedbackType.COPY, text, images=images, image_count=image_count)
+
+    def _on_images_updated(self, images, image_count: int):
+        """异步图片到达回调（Bug 3: 延迟图片支持）"""
+        if self._current_widget and self._current_widget._active:
+            self._current_widget.update_images(images, image_count)
         
     def _on_copy_failed(self):
         """复制失败回调"""
@@ -166,6 +176,15 @@ class ClipboardFXApp:
             self._current_widget.deleteLater()
             self._current_widget = None
             
+    def _toggle_holding_mode(self):
+        """切换 Holding 模式（鼠标中键）"""
+        self._holding_mode = not self._holding_mode
+        # 如果关闭 holding 且当前有 holding 动画，触发退场
+        if not self._holding_mode and self._current_widget and self._current_widget._active:
+            if hasattr(self._current_widget, 'start_exit'):
+                self._current_widget.start_exit()
+        self._update_tray_status()
+
     def _toggle_silent_mode(self):
         """切换静默模式"""
         self.silent_mode = not self.silent_mode
@@ -181,8 +200,9 @@ class ClipboardFXApp:
             self.status_action.setText("状态: 运行中（静默）")
             self.tray.setToolTip("Dose Ctrl+C - 静默运行中")
         else:
-            self.status_action.setText("状态: 运行中（提示开启）")
-            self.tray.setToolTip("Dose Ctrl+C - 剪贴板反馈")
+            holding_tag = " [Holding]" if self._holding_mode else ""
+            self.status_action.setText(f"状态: 运行中（提示开启）{holding_tag}")
+            self.tray.setToolTip(f"Dose Ctrl+C - 剪贴板反馈{holding_tag}")
 
     def _set_windows_app_id(self):
         """设置 Windows 任务栏显示标识"""

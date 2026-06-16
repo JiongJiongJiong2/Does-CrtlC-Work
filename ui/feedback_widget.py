@@ -76,8 +76,10 @@ class FeedbackWidget(QWidget):
             for img in images[:IMAGE_STACK['max_display']]:
                 if isinstance(img, QImage) and not img.isNull():
                     self._images.append(img.copy())
-        self._has_image = len(self._images) > 0
-        self._main_image = self._images[0] if self._has_image else None
+        # Bug 2 修复：即使 images 为空但 image_count > 0，也标记为有图片（预留区域）
+        self._has_image = len(self._images) > 0 or image_count > 0
+        self._main_image = self._images[0] if self._images else None
+        self._awaiting_images = image_count > 0 and len(self._images) == 0  # 等待异步图片
 
         # 动画参数
         self._dot_scale = 0.0
@@ -572,6 +574,20 @@ class FeedbackWidget(QWidget):
         """绘制主图（含像素化/收缩动画）"""
         src_img = self._main_image
         if src_img is None:
+            # 等待异步图片时绘制占位框
+            dot_cx = 5
+            dot_cy = 5
+            draw_size = max(2, int(base_size * vanish_ratio))
+            draw_x = int(base_x + (dot_cx - base_x) * (1.0 - vanish_ratio))
+            draw_y = int(base_y + (dot_cy - base_y) * (1.0 - vanish_ratio))
+            draw_radius = max(2.0, self._image_corner_radius * vanish_ratio)
+            painter.save()
+            painter.setOpacity(vanish_ratio * 0.4)
+            painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
+            painter.setBrush(QColor(17, 17, 17, 180))
+            painter.drawRoundedRect(int(draw_x), int(draw_y), draw_size, draw_size,
+                                   draw_radius, draw_radius)
+            painter.restore()
             return
 
         if self._image_scramble_progress < 1.0:
@@ -610,6 +626,41 @@ class FeedbackWidget(QWidget):
         painter.setClipPath(clip_path)
         painter.drawPixmap(int(draw_x), int(draw_y), draw_size, draw_size, pixmap)
         painter.restore()
+
+    def update_images(self, images, image_count: int):
+        """异步图片到达后更新图片数据（Bug 3: 延迟图片支持）"""
+        if not self._active:
+            return
+
+        new_images = []
+        if images:
+            for img in images[:IMAGE_STACK['max_display']]:
+                if isinstance(img, QImage) and not img.isNull():
+                    new_images.append(img.copy())
+
+        if not new_images:
+            return
+
+        self._images = new_images
+        self._image_count = min(image_count, IMAGE_STACK['max_display'])
+        self._total_image_count = image_count
+        self._has_image = True
+        self._main_image = self._images[0]
+
+        # 重新计算窗口尺寸
+        content_w = int(self._target_width + 40) if self._target_width else 100
+        image_w = self._image_box_size + 60
+        max_w = max(content_w, image_w, 220)
+        max_h = int(SIZES['box_height'] + SIZES['dot_radius'] * 2 + 30)
+        max_h += self._image_box_size + 20
+        self.setFixedSize(max(max_w, 500), max(max_h, 180))
+
+        # 启动图片像素化动画
+        self._image_scramble_progress = 0.0
+        if not self._image_scramble_timer.isActive():
+            self._image_scramble_timer.start()
+
+        self.update()
 
     def stop(self):
         """停止所有动画"""
