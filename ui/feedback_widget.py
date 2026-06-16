@@ -320,10 +320,18 @@ class FeedbackWidget(QWidget):
                 self._enter_holding_or_viewing()
 
         elif self._state == AnimationState.VIEWING:
-            self._state = AnimationState.DOT_DISAPPEAR
-            self._start_property_animation('dot_scale', 1.0, 0.0,
-                                           ANIMATION_DURATION['dot_disappear'],
-                                           QEasingCurve(QEasingCurve.InBack))
+            # 退场：先回收堆叠层（如有），再框收缩
+            if self._image_count >= 2 and self._stack_phase == 'visible':
+                self._state = AnimationState.STACK_RETRACT
+                self._stack_phase = 'retracting'
+                self._stack_anim_start = time.time() * 1000
+                self._stack_anim_duration = ANIMATION_DURATION.get('stack_retract', 220)
+                self._stack_anim_from = self._stack_progress
+                self._stack_anim_to = 0.0
+                if not self._stack_anim_timer.isActive():
+                    self._stack_anim_timer.start()
+            else:
+                self._begin_box_shrink()
 
     def _on_holding_timeout(self):
         """holding 超时，开始退场"""
