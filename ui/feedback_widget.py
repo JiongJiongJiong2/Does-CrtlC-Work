@@ -589,7 +589,7 @@ class FeedbackWidget(QWidget):
         if src_img is None:
             # 主图未加载时绘制占位框（简洁半透明圆角方块）
             painter.save()
-            painter.setOpacity(0.5)
+            painter.setOpacity(IMAGE_STACK.get('placeholder_opacity', 0.5))
             painter.setPen(QPen(QColor(255, 255, 255, 20), 1))
             painter.setBrush(QColor(30, 30, 35, 200))
             painter.drawRoundedRect(int(base_x), int(base_y), base_size, base_size,

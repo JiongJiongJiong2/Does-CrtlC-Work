@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, Signal, QTimer, QThread
 from PySide6.QtGui import QGuiApplication, QImage
 import os, re, base64
 from urllib.request import urlopen, Request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import keyboard, pyperclip
 from config import MAX_TEXT_LENGTH, CLIPBOARD_CHECK, IMAGE_STACK
 
@@ -29,15 +30,44 @@ class _ImageDataWorker(QThread):
     def run(self):
         raw_list = []
         mx = IMAGE_STACK.get('max_display', 3)
+
+        # 本地文件读取（很快，无需并行）
         for p in self._file_paths[:mx]:
             d = self._read_file(p)
             if d: raw_list.append(d)
-        for u in self._data_uris[:mx - len(raw_list)]:
-            d = self._decode_data_uri(u)
-            if d: raw_list.append(d)
-        for u in self._http_urls[:mx - len(raw_list)]:
-            d = self._download(u)
-            if d: raw_list.append(d)
+
+        remaining = mx - len(raw_list)
+        if remaining <= 0:
+            self.raw_images_ready.emit(raw_list)
+            return
+
+        # 合并 data_uris 和 http_urls，并行下载/解码
+        tasks = []
+        for u in self._data_uris[:remaining]:
+            tasks.append(('data', u))
+        for u in self._http_urls[:remaining - len(tasks)]:
+            tasks.append(('http', u))
+
+        if not tasks:
+            self.raw_images_ready.emit(raw_list)
+            return
+
+        with ThreadPoolExecutor(max_workers=min(len(tasks), 3)) as pool:
+            futures = {}
+            for kind, url in tasks:
+                if kind == 'data':
+                    futures[pool.submit(self._decode_data_uri, url)] = None
+                else:
+                    futures[pool.submit(self._download, url)] = None
+
+            for future in as_completed(futures):
+                try:
+                    d = future.result()
+                    if d and len(raw_list) < mx:
+                        raw_list.append(d)
+                except:
+                    pass
+
         self.raw_images_ready.emit(raw_list)
 
     def _read_file(self, path):
