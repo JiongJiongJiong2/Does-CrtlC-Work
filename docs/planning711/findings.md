@@ -54,6 +54,11 @@
 - P0–P2 首轮实现已完成：状态机新增 PULSE 短路径和中途退出转换；PropertyEngine 改为 `QElapsedTimer + PreciseTimer`，作为窗口活动期唯一 frame clock；FeedbackWidget 取消三个独立逐帧 QTimer；MouseTracker 取消内部双定时器并由窗口 `frame_tick` 推进。
 - 图片路径已在图片更新时缓存 25 个像素化 reveal 帧、主图和堆叠缩略图；每次 paint 不再缩放 QImage 或创建 QPixmap。
 - 静态编译、spring 数值检查和状态机 smoke test 已通过；`rg` 确认 FeedbackWidget/MouseTracker 不再保留旧的 stack/scramble/image/poll/update timer。`ui/scramble_text.py` 仍是未接入的旧独立组件，不参与 FeedbackWidget 动画。
+- Phase 7 的现有实现确认：`ClipboardMonitor` 仍使用 `keyboard` 触发后 0/40/120/260ms 轮询，并依赖 pyperclip 初始化文本；图片 worker 以完成顺序收集 future、共享已有图片字段，并以 `quit()/wait()` 尝试停止。这正是本轮需要替换的路径。
+- Phase 7 实施决策：`QClipboard.dataChanged` 负责事件触发，Windows 上 `GetClipboardSequenceNumber` 负责去重；Ctrl+C 只记录 pending intent 并以单次 confirmation timeout 判断未确认。事件后若 MIME 暂不可读，允许有限次、与该事件绑定的短暂重试，但不再使用内容 fingerprint 或周期轮询。
+- Phase 7 首轮代码已替换 ClipboardMonitor：去除 pyperclip 与 fingerprint 轮询，依赖项同步移除；worker 使用 cancellation event、request ID、顺序索引和独立 worker 集合，避免上一请求结果污染当前反馈。
+- 静态编译、ClipboardMonitor import 与 `git diff --check` 已通过；检索确认旧 fingerprint/retry/same-content 路径已不存在，新的 Qt 事件、Windows sequence 和 confirmation timeout 已接线。
+- Phase 7 测试结果：完整离屏测试 12/12 通过，覆盖 P2 空闲时钟停止、MouseTracker 无后台 timer、QClipboard 事件发射、Windows sequence 去重模拟、pending Ctrl+C 确认、worker 顺序与取消。真实 Windows 桌面录屏/CPU 基线仍需手动执行。
 
 ## Technical Decisions
 | Decision | Rationale |

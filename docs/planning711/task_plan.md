@@ -4,7 +4,7 @@
 基于当前未暂存改动、历史实现与 TMP 动画原型，明确动画退化原因、核心剪贴板逻辑问题，以及 Python/C#/C++ 的合理演进路线，并给出可执行的优先级计划。
 
 ## Current Phase
-Phase 6 (implementation complete; manual visual QA pending)
+Phase 7 (implementation complete; desktop visual/performance QA pending)
 
 ## Phases
 
@@ -46,6 +46,14 @@ Phase 6 (implementation complete; manual visual QA pending)
 - [x] 在 planning711 文档标记完成项、剩余项和验证结果
 - **Status:** complete
 
+### Phase 7: P2 真实验证与 P3 剪贴板事件重构
+- [x] 对 P2 增加可重复的运行时计时/空闲计时器验证
+- [x] 以 `QClipboard.dataChanged` 作为剪贴板变更事件源，并在 Windows 使用 sequence number 去重
+- [x] 将 Ctrl+C 从轮询触发改为 pending intent + 有界确认超时
+- [x] 为异步图片任务增加请求 ID、取消标记、顺序保持和无重复更新
+- [x] 增加事件链与 worker 的自动化测试，更新 planning711 状态
+- **Status:** complete
+
 ## Key Questions
 1. TMP 原型与当前动画在状态机、帧时序、缓动、合成方式上分别差在哪里？
 2. 当前实现检测的是 Ctrl+C 按键、选中文本，还是系统剪贴板实际变化？
@@ -62,6 +70,7 @@ Phase 6 (implementation complete; manual visual QA pending)
 | 系统剪贴板事件与 sequence number 作为成功依据 | 比内容 fingerprint 更符合产品语义，并覆盖非 Ctrl+C 的复制入口 |
 | 本轮只实施 P0–P2 动画/运行时修复 | 用户明确排除 Python+C++ 与 C#，剪贴板事件重构和打包瘦身留待后续阶段 |
 | P0–P2 的实现验收以自动化测试为准，视觉验收单列 | 当前环境能够可靠运行 offscreen Qt 测试；原型手感仍应在真实桌面录屏下确认 |
+| P3 先使用 Qt 事件，Windows sequence 用于去重 | Qt 负责剪贴板变更通知；保留原生 `WM_CLIPBOARDUPDATE` 作为未来 Qt 平台行为不足时的后端增强，而非重复注册两套事件源 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

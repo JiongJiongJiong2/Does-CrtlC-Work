@@ -10,6 +10,8 @@ from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
 from config import ANIMATION_DURATION
+from core.mouse_tracker import MouseTracker
+from ui.animation.property_engine import PropertyEngine
 from ui.animation.spring_ease import spring_ease
 from ui.animation.state_machine import AnimationState, AnimationStateMachine
 from ui.feedback_widget import FeedbackType, FeedbackWidget
@@ -101,3 +103,15 @@ class FeedbackRuntimeTests(unittest.TestCase):
         self.assertIsNotNone(widget._main_image_cache)
         self.assertEqual(len(widget._main_image_cache.reveal_frames), 25)
         self.assertEqual(len(widget._stack_thumbnail_cache), 2)
+
+    def test_idle_animation_clock_and_mouse_tracker_have_no_background_timer(self):
+        engine = PropertyEngine()
+        self.assertFalse(engine._timer.isActive())
+        engine.set_frame_active('test', True)
+        self.assertTrue(engine._timer.isActive())
+        engine.set_frame_active('test', False)
+        self.assertFalse(engine._timer.isActive())
+
+        tracker = MouseTracker()
+        self.assertFalse(hasattr(tracker, 'poll_timer'))
+        self.assertFalse(hasattr(tracker, 'update_timer'))

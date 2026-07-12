@@ -66,3 +66,13 @@
   - `docs/planning711/task_plan.md`（更新）
   - `docs/planning711/progress.md`（更新）
   - `tests/test_animation_runtime.py`（创建）
+
+### Phase 7: P2 真实验证与 P3 剪贴板事件重构
+- **Status:** complete
+- Actions taken:
+  - 用户要求继续 P2 剩余验证并开始 P3。
+  - 计划采用 Qt 剪贴板事件为跨平台触发源，在 Windows 叠加系统 sequence number；保留 Ctrl+C 仅作为确认意图。
+  - 已确认旧实现的轮询、pyperclip 初始化、worker 共享状态和完成顺序问题，准备整体替换 ClipboardMonitor。
+  - 完成 ClipboardMonitor 首轮替换、配置与 requirements 清理；静态编译、import 和 whitespace 检查通过。
+  - 添加 P3 事件链与 worker 测试，并补充 P2 空闲时钟/鼠标无后台 timer 测试；完整离屏套件通过 12 项。
+  - P2 的真实 Windows 桌面 CPU、帧耗时与视觉录屏仍待手动验收；本轮完成的是可重复的结构与事件链验证。

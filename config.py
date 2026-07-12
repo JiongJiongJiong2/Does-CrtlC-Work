@@ -20,8 +20,8 @@ ANIMATION_DURATION = {
 
 # 剪贴板检测参数
 CLIPBOARD_CHECK = {
-    'retry_delays': [40, 120, 260],   # 多次采样延迟(ms)
-    'same_content_as_success': True,   # 同内容复制也视为成功
+    'confirmation_timeout': 700,       # Ctrl+C 等待系统剪贴板事件的最长时间(ms)
+    'event_retry_delays': [40, 120],   # 事件已到达但 MIME 暂不可读时的有限重试(ms)
 }
 
 # 颜色配置
