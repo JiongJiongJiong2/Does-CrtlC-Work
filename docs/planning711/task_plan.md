@@ -4,7 +4,7 @@
 基于当前未暂存改动、历史实现与 TMP 动画原型，明确动画退化原因、核心剪贴板逻辑问题，以及 Python/C#/C++ 的合理演进路线，并给出可执行的优先级计划。
 
 ## Current Phase
-Phase 7 (implementation complete; desktop visual/performance QA pending)
+Phase 9 (implementation complete; Windows visual QA pending)
 
 ## Phases
 
@@ -54,6 +54,22 @@ Phase 7 (implementation complete; desktop visual/performance QA pending)
 - [x] 增加事件链与 worker 的自动化测试，更新 planning711 状态
 - **Status:** complete
 
+### Phase 8: 中文排版与文本渲染性能
+- [x] 建立文本脚本识别与 `TextStyleResolver`：英文/代码、中文/混合、emoji 分别选择合适的 Windows UI 字体与字距
+- [x] 以 `QFontMetricsF.horizontalAdvance` 计算内容框宽度，移除 `len(text) × char_width` 的固定宽度假设
+- [x] 缓存 QFont、QFontMetricsF 和最终文本布局；避免 `paintEvent` 每帧创建字体
+- [x] 将 scramble 的随机文本更新限制为视觉足够的节奏（建议 24–30fps），保持窗口和鼠标动画 60fps
+- [x] 以中文、混合中英、长文本、emoji 建立宽度、绘制与不裁剪测试
+- [ ] 在真实 Windows 桌面验收实际字体 fallback、视觉效果和帧耗时
+- **Status:** complete
+
+### Phase 9: P8.1 ASCII block 伪加载平滑度
+- [x] 确认卡顿来自 33ms（约 30fps）刷新与 60fps 窗口动画不同步，以及每次全量重随机字符串
+- [x] 改为 16ms 同频刷新、持久化 scramble 缓冲，并限制每帧噪声变更数量
+- [x] 更新回归测试并运行离屏验证（15 项通过）
+- [ ] 在真实 Windows 桌面确认 ASCII block 与中文最终文本的观感
+- **Status:** complete
+
 ## Key Questions
 1. TMP 原型与当前动画在状态机、帧时序、缓动、合成方式上分别差在哪里？
 2. 当前实现检测的是 Ctrl+C 按键、选中文本，还是系统剪贴板实际变化？
@@ -71,6 +87,7 @@ Phase 7 (implementation complete; desktop visual/performance QA pending)
 | 本轮只实施 P0–P2 动画/运行时修复 | 用户明确排除 Python+C++ 与 C#，剪贴板事件重构和打包瘦身留待后续阶段 |
 | P0–P2 的实现验收以自动化测试为准，视觉验收单列 | 当前环境能够可靠运行 offscreen Qt 测试；原型手感仍应在真实桌面录屏下确认 |
 | P3 先使用 Qt 事件，Windows sequence 用于去重 | Qt 负责剪贴板变更通知；保留原生 `WM_CLIPBOARDUPDATE` 作为未来 Qt 平台行为不足时的后端增强，而非重复注册两套事件源 |
+| 中文文本采用“原生 UI 字体优先、代码字体按脚本启用”的策略 | 对所有文本强制 Cascadia Code + 2px 字距会造成 CJK fallback、字距失真和宽度计算错误 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -79,6 +96,8 @@ Phase 7 (implementation complete; desktop visual/performance QA pending)
 | 当前 `spring_ease(1,0,t)` 调用触发 ZeroDivisionError | 1 | 已确认是新旧函数接口错配；列为动画 P0 修复 |
 | 更新规划文档时 apply_patch 上下文不匹配 | 1 | 已读取实际内容并改用更小的精确补丁 |
 | 完成报告后再次从工作区根调用 git status | 2 | 已保留已知仓库边界；最终状态检查改到 `dose-ctrlc/` |
+| P8 验证命令中的 PowerShell 引号未闭合 | 1 | 拆分测试与检索命令，避免在正则中嵌套双引号 |
+| P8.1 更新 PROJECT_REVIEW 的首个补丁上下文不匹配 | 1 | 读取实际段落后使用精确上下文补丁完成更新 |
 
 ## Notes
 - 只创建本次审查所需的规划文档，不修改产品代码。

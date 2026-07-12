@@ -6,15 +6,17 @@ import unittest
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 from PySide6.QtCore import QTimer
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
-from config import ANIMATION_DURATION
+from config import ANIMATION_DURATION, SIZES
 from core.mouse_tracker import MouseTracker
 from ui.animation.property_engine import PropertyEngine
 from ui.animation.spring_ease import spring_ease
 from ui.animation.state_machine import AnimationState, AnimationStateMachine
+from ui.components.content_box import ContentBox
 from ui.feedback_widget import FeedbackType, FeedbackWidget
+from ui.text_style import TextStyleResolver
 
 
 def core_app():
@@ -115,3 +117,52 @@ class FeedbackRuntimeTests(unittest.TestCase):
         tracker = MouseTracker()
         self.assertFalse(hasattr(tracker, 'poll_timer'))
         self.assertFalse(hasattr(tracker, 'update_timer'))
+
+    def test_script_aware_style_uses_ui_font_without_cjk_tracking(self):
+        chinese = TextStyleResolver.resolve('复制中文测试')
+        mixed = TextStyleResolver.resolve('Copy 中文 mixed')
+        latin = TextStyleResolver.resolve('Copy text')
+        emoji = TextStyleResolver.resolve('✅ copied')
+        self.assertEqual(chinese.kind, 'ui_cjk')
+        self.assertEqual(mixed.kind, 'ui_cjk')
+        self.assertEqual(emoji.kind, 'ui_emoji')
+        self.assertEqual(chinese.font.letterSpacing(), 0.0)
+        self.assertGreater(latin.font.letterSpacing(), 0.0)
+
+    def test_cjk_widget_uses_metrics_width_and_incremental_60fps_scramble(self):
+        widget = FeedbackWidget(FeedbackType.COPY, text='复制中文和 English 混排文本')
+        expected = max(
+            SIZES['box_min_width'],
+            min(SIZES['box_max_width'],
+                widget._text_style.horizontal_advance(widget._text) + SIZES['box_padding']))
+        self.assertEqual(widget._target_width, expected)
+        self.assertIsNotNone(widget._final_text_layout)
+
+        widget._scramble_start_ms = 0
+        widget._advance_text_scramble(0)
+        first_refresh = widget._last_scramble_refresh_ms
+        widget._advance_text_scramble(10)
+        self.assertEqual(widget._last_scramble_refresh_ms, first_refresh)
+        widget._advance_text_scramble(16)
+        self.assertEqual(widget._last_scramble_refresh_ms, 16)
+        self.assertEqual(len(widget._scramble_buffer), len(widget._text))
+
+        widget._advance_text_scramble(600)
+        solved_count = widget._scramble_solved_count
+        self.assertGreater(solved_count, 0)
+        solved_prefix = widget._scramble_buffer[:solved_count]
+        widget._advance_text_scramble(616)
+        self.assertEqual(widget._scramble_buffer[:solved_count], solved_prefix)
+
+    def test_long_cjk_text_elides_and_cached_layout_paints(self):
+        widget = FeedbackWidget(FeedbackType.COPY, text='中文' * 100)
+        self.assertLessEqual(widget._target_width, SIZES['box_max_width'])
+        self.assertTrue(widget._text.endswith('…'))
+
+        canvas = QImage(500, 80, QImage.Format_ARGB32)
+        canvas.fill(0)
+        painter = QPainter(canvas)
+        ContentBox.paint(painter, 5, 5, widget._target_width, 28, 1.0,
+                         widget._text, 1.0, widget._text_style,
+                         widget._final_text_layout)
+        painter.end()

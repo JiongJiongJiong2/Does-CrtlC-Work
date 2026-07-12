@@ -59,6 +59,14 @@
 - Phase 7 首轮代码已替换 ClipboardMonitor：去除 pyperclip 与 fingerprint 轮询，依赖项同步移除；worker 使用 cancellation event、request ID、顺序索引和独立 worker 集合，避免上一请求结果污染当前反馈。
 - 静态编译、ClipboardMonitor import 与 `git diff --check` 已通过；检索确认旧 fingerprint/retry/same-content 路径已不存在，新的 Qt 事件、Windows sequence 和 confirmation timeout 已接线。
 - Phase 7 测试结果：完整离屏测试 12/12 通过，覆盖 P2 空闲时钟停止、MouseTracker 无后台 timer、QClipboard 事件发射、Windows sequence 去重模拟、pending Ctrl+C 确认、worker 顺序与取消。真实 Windows 桌面录屏/CPU 基线仍需手动执行。
+- 中文卡顿与“不原生”观感的直接代码原因位于 `ContentBox.paint`：每次 paint 创建 `QFont("Cascadia Code", 10)`，强制 Monospace，再加入 2px 绝对字距；中文 glyph 多数会走 fallback 字体，而混合的中文/英文/Unicode block 会在同一帧产生更多 glyph run 与 shaping 工作。
+- 内容框宽度在 FeedbackWidget 中使用 `len(text) * SIZES['char_width']`（9.5px）估算，完全不等同于 CJK、emoji 或 fallback 后字体的真实 advance；可能导致框宽跳变、裁剪或空白过大。
+- 中文 scramble 期间仍每 16ms 构造完整随机字符串并 `drawText`；即使只有 45 个字符，fallback、字形布局和每帧新建 QFont 会把这段 1 秒动画的主线程开销放大。应缓存文本样式，并把随机字面更新与 60fps 窗口运动解耦。
+- 离屏 Qt 字体查询没有解析出可靠 family（所有候选 `exactMatch=False`），不能据此决定目标机字体；真实 Windows 上需要按优先级验证 `Segoe UI Variable` / `Microsoft YaHei UI` / `Microsoft YaHei` 的可用性和实际观感。
+- Phase 8 实施设计：新增 `TextStyleResolver` 缓存脚本分类后的 QFont/QFontMetricsF；FeedbackWidget 在初始化时依据真实 metrics 省略过长文本并计算目标宽度；ContentBox 接收缓存样式与最终 `QStaticText`，不再在 paint 时创建字体；scramble 字符串仅每 33ms 更新，窗口帧时钟维持 60fps。
+- Phase 8 实施完成：`ui/text_style.py` 按 CJK/emoji/Latin 解析并缓存 QFont/QFontMetricsF；中文使用 Windows UI 字体候选且 0 字距，Latin 保留轻微 0.5px 代码字距。FeedbackWidget 以真实 advance 宽度和省略文本创建目标宽度/最终 QStaticText，ContentBox 仅绘制缓存对象；scramble 刷新间隔为 33ms。
+- 离屏测试目前覆盖 CJK、混排、emoji 样式选择，真实 metrics 宽度，33ms 节流，长中文省略和 QStaticText 绘制。真实 Windows 字体实际解析和视觉/帧耗时仍需人工验收。
+- P8.1 复查确认：33ms 的 scramble 字面刷新约为 30fps，而 PropertyEngine 仍以约 60fps 推进窗口；两套节奏不同会使 ASCII block 看起来慢半拍。旧循环每次还为整段文字重新随机，导致噪声跳变过大。修复改用持久化字符缓冲：已解码字符只写入一次、前沿 4 个 block 每帧更新、远端噪声每帧只轮换有限字符；刷新间隔改为 16ms。
 
 ## Technical Decisions
 | Decision | Rationale |

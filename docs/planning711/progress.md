@@ -76,3 +76,33 @@
   - 完成 ClipboardMonitor 首轮替换、配置与 requirements 清理；静态编译、import 和 whitespace 检查通过。
   - 添加 P3 事件链与 worker 测试，并补充 P2 空闲时钟/鼠标无后台 timer 测试；完整离屏套件通过 12 项。
   - P2 的真实 Windows 桌面 CPU、帧耗时与视觉录屏仍待手动验收；本轮完成的是可重复的结构与事件链验证。
+
+### Phase 8: 中文排版与文本渲染性能（审查完成，待实施）
+- **Status:** complete
+- Actions taken:
+  - 审查 ContentBox、FeedbackWidget、布局与旧 ScrambleText 的字体、字距、宽度和逐帧更新路径。
+  - 确认 CJK fallback、固定字符宽度、每帧新建字体、60fps 全量随机文本是主要风险；离屏字体可用性查询结果不可靠，需真实 Windows 验收。
+  - 开始实施：将新增文本样式解析器、真实宽度测量、静态最终布局缓存与 30fps scramble 文本节流。
+  - 首次联合验证命令因 PowerShell 正则引号未闭合而失败；已记录，改用拆分命令验证。
+  - 完成 `TextStyleResolver`、QFontMetricsF 宽度/省略、缓存 QStaticText、ContentBox 样式注入和 33ms scramble 节流。
+  - 添加中文/混排/emoji、长中文省略和缓存布局绘制测试；离屏完整套件通过 15 项。
+  - 真实 Windows 桌面字体 fallback、视觉与性能验收仍待手动完成。
+- Files created/modified:
+  - `ui/text_style.py`（创建）
+  - `ui/components/content_box.py`（更新）
+  - `ui/feedback_widget.py`（更新）
+  - `config.py`（更新）
+  - `tests/test_animation_runtime.py`（更新）
+
+### Phase 9: P8.1 ASCII block 伪加载平滑度
+- **Status:** complete
+- Actions taken:
+  - 用户反馈文字出现时 ASCII block 伪加载有轻微慢、卡顿感。
+  - 确认原因是 33ms（约 30fps）文本刷新与 60fps 窗口帧不同步，且每次刷新会全量重随机整段文字。
+  - 已改为 16ms 同频刷新和持久化字符缓冲：只写入新增的最终字符，前沿 block 与远端少量噪声增量变更，保留中文最终文本的 UI 字体路径。
+  - 更新运行时测试，验证 16ms 刷新、缓冲长度和已解码前缀稳定；完整离屏测试 15/15 通过，`compileall` 与 `git diff --check` 通过。
+  - 真实 Windows 桌面下的 ASCII block 观感、中文字体 fallback 和帧耗时仍需手动验收。
+- Files created/modified:
+  - `docs/planning711/task_plan.md`（更新）
+  - `docs/planning711/findings.md`（更新）
+  - `docs/planning711/progress.md`（更新）

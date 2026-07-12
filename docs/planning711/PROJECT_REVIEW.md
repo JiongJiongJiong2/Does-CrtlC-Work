@@ -229,3 +229,37 @@ P0 动画运行时错误与状态路径
 | Python+C++ 混合、C# 迁移 | 不做 | 按本轮产品决策不实施。 |
 
 验证：`QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v` 已通过 12 项测试；`python -m compileall -q .` 和 `git diff --check` 通过。
+
+## 8. 中文文本卡顿与“原生感”改进计划
+
+### 已确认的问题
+
+- 内容框每次 `paintEvent` 都重新创建 `Cascadia Code` 等宽字体，并强制追加 2px 字距；对中文而言，这既不是 Windows 原生排版，也会触发 fallback 字体与过大的字符间距。
+- 内容框宽度是 `len(text) × 9.5`，不是最终字体的真实像素宽度。中文、emoji、全角符号和中英混排都可能出现框宽估算错误。
+- scramble 在 60fps 每帧重建整段字符串。中文目标字符、ASCII 乱码和 block 字符混排会增加字体 fallback 和 layout 的负担，表现为复制中文时更容易掉帧。
+
+### 实施顺序
+
+1. 新增 `TextStyleResolver`：英文/代码保持 Cascadia Mono 风格；中文或中英混排优先使用 Windows UI 字体（真实桌面验证 Segoe UI Variable、Microsoft YaHei UI、Microsoft YaHei），中文取消绝对 2px 字距。
+2. 用 `QFontMetricsF.horizontalAdvance` 测量真实文本宽度；布局从固定 `char_width` 改为 style + metrics 驱动，并为 emoji 留出安全边距。
+3. 将 QFont、metrics 和最终文本布局缓存到 FeedbackWidget；ContentBox 只接收已经确定的样式，不在 paint 中创建字体。
+4. 窗口/鼠标仍维持 60fps；scramble 字面仅以 24–30fps 更新，或仅在 reveal 前沿变化时刷新。这样视觉连续，但中文不会每帧做完整 glyph layout。
+5. 添加中文、混合中英、emoji、45 字上限文本的宽度和截图测试；在真实 Windows 桌面录制 60fps，对比中文和英文复制的帧耗时。
+
+### 验收标准
+
+- 中文、英文和混排文本均不被裁剪，内容框宽度与真实字形宽度一致。
+- 中文不再带有 2px 英文式追踪字距，字体与 Windows UI 视觉一致。
+- 中文 scramble 的平均帧处理时间不高于英文路径的 1.5 倍；窗口跟随不因文本更新明显掉帧。
+
+### 实施状态（2026-07-12）
+
+- 已完成：脚本感知的 `TextStyleResolver`、Windows UI 字体候选、中文零字距、真实 metrics 宽度、文本省略、QFont/QFontMetricsF/QStaticText 缓存，以及 P8.1 的 16ms 增量 scramble 缓冲。
+- 自动验证：中文、混排、emoji 样式选择；长中文不超框且省略；缓存最终布局可以绘制；完整离屏测试已达 15 项。
+- 未完成：真实 Windows 桌面实际 fallback 字体、视觉“原生感”、中文/英文帧耗时对比和 60fps 录屏验收。
+
+### P8.1：ASCII block 伪加载平滑度（2026-07-12）
+
+- 已完成：scramble 刷新由 33ms 改为 16ms，与窗口帧时钟同频；使用持久化字符缓冲，已解码前缀不再反复随机，前沿 block 和远端少量噪声增量更新。
+- 自动验证：离屏测试 15/15 通过，覆盖 16ms 刷新、缓冲长度和已解码前缀稳定性；`compileall` 与 `git diff --check` 通过。
+- 未完成：在真实 Windows 桌面确认 ASCII block 的视觉连续性及实际帧耗时。

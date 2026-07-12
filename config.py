@@ -40,10 +40,18 @@ SIZES = {
     'box_height': 28,          # 框高度
     'box_min_width': 80,       # 框最小宽度
     'box_max_width': 450,      # 框最大宽度
-    'char_width': 9.5,         # 每字符宽度
     'box_padding': 24,         # 框内边距
     'mouse_offset_x': 16,      # 鼠标 X 偏移
     'mouse_offset_y': 16,      # 鼠标 Y 偏移
+}
+
+# 文本渲染：scramble 与窗口帧时钟同频；每帧只变更少量噪声字符。
+TEXT_RENDER = {
+    'font_size': 10,
+    'latin_letter_spacing': 0.5,
+    'cjk_letter_spacing': 0.0,
+    'scramble_refresh_ms': 16,
+    'scramble_mutations_per_frame': 4,
 }
 
 # Spring 物理参数 (用于鼠标跟随缓动)

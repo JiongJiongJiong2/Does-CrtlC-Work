@@ -5,11 +5,11 @@ from enum import Enum, auto
 from typing import List, Optional
 
 from PySide6.QtCore import QTimer, Qt, QEasingCurve, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap, QStaticText
 from PySide6.QtWidgets import QWidget
 
 from config import (ANIMATION_DURATION, BLOCK_CHARS, COLORS, IMAGE_STACK,
-                    SCRAMBLE_CHARS, SIZES)
+                    SCRAMBLE_CHARS, SIZES, TEXT_RENDER)
 from ui.animation.property_engine import PropertyEngine
 from ui.animation.spring_ease import spring_ease
 from ui.animation.state_machine import AnimationState, AnimationStateMachine
@@ -19,6 +19,7 @@ from ui.components.image_renderer import ImageRenderCache, ImageRenderer
 from ui.components.stack_layer import StackLayer
 from ui.feedback_layout import (DOT_CX, DOT_CY, image_base_pos, mouse_to_window,
                                 window_size)
+from ui.text_style import TextStyle, TextStyleResolver
 
 
 class FeedbackType(Enum):
@@ -36,6 +37,10 @@ class FeedbackWidget(QWidget):
         super().__init__(parent)
         self._feedback_type = feedback_type
         self._text = text
+        self._text_style: TextStyle = TextStyleResolver.resolve(text)
+        self._text = self._text_style.elide(text) if text else ''
+        self._final_text_layout: Optional[QStaticText] = (
+            self._text_style.static_layout(self._text) if self._text else None)
         self._image_count = min(image_count, IMAGE_STACK['max_display'])
         self._total_image_count = image_count
         self._holding_mode = holding_mode
@@ -59,17 +64,22 @@ class FeedbackWidget(QWidget):
         self._stack_anim_from = 0.0
         self._stack_anim_to = 1.0
         self._scramble_start_ms: Optional[float] = None
+        self._last_scramble_refresh_ms: Optional[float] = None
+        self._scramble_buffer: List[str] = []
+        self._scramble_solved_count = 0
+        self._scramble_noise_cursor = 0
         self._image_reveal_start_ms: Optional[float] = None
         self._image_scramble_progress = 0.0
         self._vanish_ratio = 1.0
         self._display_text = ""
 
         self._target_width = 0.0
-        if feedback_type == FeedbackType.COPY and text:
+        if feedback_type == FeedbackType.COPY and self._text:
             self._target_width = min(
                 SIZES['box_max_width'],
                 max(SIZES['box_min_width'],
-                    len(text) * SIZES['char_width'] + SIZES['box_padding']))
+                    self._text_style.horizontal_advance(self._text) +
+                    SIZES['box_padding']))
 
         if feedback_type == FeedbackType.ERROR:
             self._dot_color = QColor(COLORS['dot_error'])
@@ -211,7 +221,8 @@ class FeedbackWidget(QWidget):
             self._continue_after_text()
             return
         self._scramble_start_ms = self._engine.now_ms
-        self._display_text = ""
+        self._last_scramble_refresh_ms = None
+        self._reset_scramble_buffer()
         self._engine.set_frame_active('text_scramble', True)
 
     def _act_enter_image_or_viewing(self):
@@ -320,23 +331,54 @@ class FeedbackWidget(QWidget):
             return
         duration = ANIMATION_DURATION['text_scramble']
         progress = min((now_ms - self._scramble_start_ms) / duration, 1.0)
+        if (progress < 1.0 and self._last_scramble_refresh_ms is not None and
+                now_ms - self._last_scramble_refresh_ms <
+                TEXT_RENDER['scramble_refresh_ms']):
+            return
+        self._last_scramble_refresh_ms = now_ms
         solved_count = int(progress * len(self._text))
-        result = []
-        for index, char in enumerate(self._text):
-            if index < solved_count:
-                result.append(char)
-            elif index < solved_count + 4:
-                result.append(random.choice(BLOCK_CHARS))
-            elif random.random() < 0.6:
-                result.append(random.choice(SCRAMBLE_CHARS))
-            else:
-                result.append(random.choice(BLOCK_CHARS[2:6]))
-        self._display_text = ''.join(result)
+        if not self._scramble_buffer:
+            self._reset_scramble_buffer()
+
+        # 已解码字符只写入一次。未解码区保留上一帧的内容，并仅轮换少量
+        # 噪声字符，避免每帧重建整段随机文本造成不连续的视觉闪烁。
+        for index in range(self._scramble_solved_count, solved_count):
+            self._scramble_buffer[index] = self._text[index]
+        self._scramble_solved_count = solved_count
+
+        block_end = min(solved_count + 4, len(self._text))
+        for index in range(solved_count, block_end):
+            self._scramble_buffer[index] = random.choice(BLOCK_CHARS)
+
+        noise_start = block_end
+        noise_length = len(self._text) - noise_start
+        if noise_length:
+            for offset in range(min(TEXT_RENDER['scramble_mutations_per_frame'],
+                                    noise_length)):
+                index = noise_start + ((self._scramble_noise_cursor + offset) %
+                                       noise_length)
+                self._scramble_buffer[index] = self._random_scramble_char()
+            self._scramble_noise_cursor += TEXT_RENDER['scramble_mutations_per_frame']
+
+        self._display_text = ''.join(self._scramble_buffer)
         if progress >= 1.0:
             self._display_text = self._text
             self._scramble_start_ms = None
+            self._last_scramble_refresh_ms = None
             self._engine.set_frame_active('text_scramble', False)
             self._continue_after_text()
+
+    def _reset_scramble_buffer(self):
+        self._scramble_buffer = [self._random_scramble_char() for _ in self._text]
+        self._scramble_solved_count = 0
+        self._scramble_noise_cursor = 0
+        self._display_text = ''.join(self._scramble_buffer)
+
+    @staticmethod
+    def _random_scramble_char() -> str:
+        if random.random() < 0.6:
+            return random.choice(SCRAMBLE_CHARS)
+        return random.choice(BLOCK_CHARS[2:6])
 
     def _continue_after_text(self):
         if self._has_image:
@@ -417,6 +459,10 @@ class FeedbackWidget(QWidget):
 
     def _stop_timed_effects(self):
         self._scramble_start_ms = None
+        self._last_scramble_refresh_ms = None
+        self._scramble_buffer = []
+        self._scramble_solved_count = 0
+        self._scramble_noise_cursor = 0
         self._image_reveal_start_ms = None
         self._engine.set_frame_active('text_scramble', False)
         self._engine.set_frame_active('image_reveal', False)
@@ -433,7 +479,9 @@ class FeedbackWidget(QWidget):
         if self._box_width > 1 and self._box_opacity > 0.01:
             ContentBox.paint(painter, DOT_CX, DOT_CY, self._box_width,
                              self._box_height, self._box_opacity,
-                             self._display_text, self._dot_scale)
+                             self._display_text, self._dot_scale,
+                             self._text_style,
+                             self._final_text_layout if self._display_text == self._text else None)
         if self._has_image:
             image_x, image_y = image_base_pos(DOT_CX, DOT_CY, self._target_width)
             if self._stack_progress > 0.01 and self._image_count >= 2:
