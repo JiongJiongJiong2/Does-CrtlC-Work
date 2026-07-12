@@ -213,3 +213,17 @@ P0 动画运行时错误与状态路径
   → 用数据决定是否做 C# 样机
   → 不做 Python+C++ 混合过渡
 ```
+
+## 7. 实施状态（2026-07-12）
+
+| 项目 | 状态 | 说明 |
+|---|---|---|
+| P0：spring 接口、ERROR/PASTE 短路径、退场 2 px 竖线 | 已完成 | 堆叠 spring 已改为正常化时间调用；短提示改用 `PULSE`；框宽先收至 2 px，线阶段线性淡出，圆点使用 InBack 退场。 |
+| P1：TMP scramble、图片 reveal、动画中退出 | 已完成 | 恢复全域噪点解码，图片 reveal 恢复为 1000 ms；IMAGE/STACK/TEXT/PULSE 都能安全进入退出路径。 |
+| P2：单时钟、按需鼠标跟随、图片缓存 | 已完成 | `PropertyEngine` 改为 `QElapsedTimer + PreciseTimer` 单帧时钟；MouseTracker 不再保留内部 timer；主图 25 帧 reveal 和堆叠缩略图在更新图片时缓存。 |
+| P2：真实桌面性能基线与录屏对照 TMP | 未完成 | 需要在正常 Windows 桌面实测空闲 CPU、多图帧耗时和 60fps 录屏；当前已完成 offscreen 自动化验证。 |
+| Phase 3：系统剪贴板事件与 sequence number | 未开始 | 保持在下一阶段，未混入本轮动画修复。 |
+| Phase 4：PyInstaller/Qt 瘦身实验 | 未开始 | 保持在下一阶段。 |
+| Python+C++ 混合、C# 迁移 | 不做 | 按本轮产品决策不实施。 |
+
+验证：`QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v` 已通过 6 项测试；`python -m compileall -q .` 和 `git diff --check` 通过。

@@ -16,7 +16,7 @@ class StackLayer:
     @staticmethod
     def paint(painter: QPainter, base_x: float, base_y: float,
               base_size: int, layer_idx: int, progress: float,
-              images: list) -> None:
+              images: list, thumbnail: QPixmap = None) -> None:
         """绘制一个堆叠背景层
 
         Args:
@@ -69,10 +69,12 @@ class StackLayer:
         show_real = cfg.get('show_real_thumbnails', False)
         img_idx = layer_idx + 1
         if show_real and img_idx < len(images):
-            img = images[img_idx]
-            scaled = img.scaled(base_size, base_size,
-                               Qt.KeepAspectRatioByExpanding, Qt.FastTransformation)
-            pixmap = QPixmap.fromImage(scaled)
+            pixmap = thumbnail
+            if pixmap is None:
+                img = images[img_idx]
+                scaled = img.scaled(base_size, base_size,
+                                   Qt.KeepAspectRatioByExpanding, Qt.FastTransformation)
+                pixmap = QPixmap.fromImage(scaled)
 
             clip = QPainterPath()
             clip.addRoundedRect(float(sx), float(sy), float(base_size), float(base_size),

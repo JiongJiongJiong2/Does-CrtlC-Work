@@ -49,3 +49,20 @@
 | What's the goal? | 对三个核心问题做基于代码证据的审查并给出实施计划 |
 | What have I learned? | 见 findings.md |
 | What have I done? | 完成代码/构建/架构审查并产出 PROJECT_REVIEW.md；未修改产品代码 |
+
+## Session: 2026-07-12
+
+### Phase 6: P0–P2 动画与运行时修复
+- **Status:** complete
+- Actions taken:
+  - 用户决定继续 Python，实现 P0–P2，不做 Python+C++ 混合或 C#。
+  - 已读取现有规划与审查证据，准备在不覆盖用户现有 UI 重构的前提下修复。
+  - 确认当前 Git 改动仅为本轮更新的 planning711 文档，产品代码仍处于审查时记录的待修状态。
+  - 完成 P0–P2 首轮代码修改：状态机、单调帧时钟、反馈窗口、鼠标追踪、图片缓存及动画时长配置。
+  - 执行 `compileall`、state-machine smoke 与 spring smoke，均通过；`git diff --check` 通过。
+  - 添加并执行 6 项 offscreen Qt 回归测试，覆盖 PULSE、运行中退出、spring、完整 copy 退场的 2px 线、图片 reveal/缩略图缓存和单时钟结构。
+  - 在 `PROJECT_REVIEW.md` 写明已完成、未完成以及“不做”的架构决策。
+- Files created/modified:
+  - `docs/planning711/task_plan.md`（更新）
+  - `docs/planning711/progress.md`（更新）
+  - `tests/test_animation_runtime.py`（创建）

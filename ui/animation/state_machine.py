@@ -15,6 +15,7 @@ class AnimationState(Enum):
     TEXT_REVEAL = auto()
     IMAGE_APPEAR = auto()
     STACK_APPEAR = auto()
+    PULSE = auto()
     VIEWING = auto()
     HOLDING = auto()
     STACK_RETRACT = auto()
@@ -49,7 +50,9 @@ class AnimationStateMachine(QObject):
         (AnimationState.DOT_APPEAR, 'done_copy_no_text'):
             (AnimationState.IMAGE_APPEAR, 'enter_image_or_viewing'),
         (AnimationState.DOT_APPEAR, 'done_error_paste'):
-            (AnimationState.VIEWING, 'start_view_timer'),
+            (AnimationState.PULSE, 'start_pulse_timer'),
+        (AnimationState.DOT_APPEAR, 'exit'):
+            (AnimationState.DOT_DISAPPEAR, 'animate_dot_disappear'),
 
         (AnimationState.BOX_EXPAND, 'done'):
             (AnimationState.TEXT_REVEAL, 'start_scramble'),
@@ -67,21 +70,39 @@ class AnimationStateMachine(QObject):
             (AnimationState.HOLDING, 'start_holding_timer'),
         (AnimationState.IMAGE_APPEAR, 'done_normal_single'):
             (AnimationState.VIEWING, 'start_view_timer'),
+        (AnimationState.IMAGE_APPEAR, 'exit_no_stack'):
+            (AnimationState.IMAGE_VANISH, 'animate_image_vanish'),
 
         (AnimationState.STACK_APPEAR, 'done_holding'):
             (AnimationState.HOLDING, 'start_holding_timer'),
         (AnimationState.STACK_APPEAR, 'done_normal'):
             (AnimationState.VIEWING, 'start_view_timer'),
+        (AnimationState.STACK_APPEAR, 'exit_has_stack'):
+            (AnimationState.STACK_RETRACT, 'retract_stack'),
+        (AnimationState.STACK_APPEAR, 'exit_no_stack'):
+            (AnimationState.IMAGE_VANISH, 'animate_image_vanish'),
+
+        (AnimationState.PULSE, 'timeout'):
+            (AnimationState.DOT_DISAPPEAR, 'animate_dot_disappear'),
+        (AnimationState.PULSE, 'exit'):
+            (AnimationState.DOT_DISAPPEAR, 'animate_dot_disappear'),
 
         # === 退场序列 ===
         (AnimationState.VIEWING, 'timeout_has_stack'):
             (AnimationState.STACK_RETRACT, 'retract_stack'),
         (AnimationState.VIEWING, 'timeout_no_stack'):
             (AnimationState.IMAGE_VANISH, 'animate_image_vanish'),
+        (AnimationState.VIEWING, 'exit_has_stack'):
+            (AnimationState.STACK_RETRACT, 'retract_stack'),
+        (AnimationState.VIEWING, 'exit_no_stack'):
+            (AnimationState.IMAGE_VANISH, 'animate_image_vanish'),
 
         (AnimationState.HOLDING, 'exit_has_stack'):
             (AnimationState.STACK_RETRACT, 'retract_stack'),
         (AnimationState.HOLDING, 'exit_no_stack'):
+            (AnimationState.IMAGE_VANISH, 'animate_image_vanish'),
+
+        (AnimationState.TEXT_REVEAL, 'exit_no_stack'):
             (AnimationState.IMAGE_VANISH, 'animate_image_vanish'),
 
         (AnimationState.STACK_RETRACT, 'done'):

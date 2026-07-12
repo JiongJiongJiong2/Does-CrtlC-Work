@@ -5,6 +5,7 @@
 - 评估转 C#，或将核心功能迁往 C++/C# 的合理性，重点关注约 45 MB 打包体积。
 - 审查核心产品逻辑：目标是确认 Ctrl+C 是否真的复制成功，而当前实现疑似自行捕捉、没有监听系统剪贴板。
 - 以产品与全栈视角给出方案、建议、优先级和可实施计划。
+- 2026-07-12：用户选择继续 Python，实现审查报告的 P0–P2；不做 Python+C++ 混合与 C#。
 
 ## Research Findings
 - 工作区根目录包含三个历史发布 zip、`TMP` 原型目录和 `dose-ctrlc` 项目目录。
@@ -48,6 +49,11 @@
 - 新重构名为“统一动画引擎”，但单个 FeedbackWidget 仍同时持有 PropertyEngine timer、stack timer、text scramble timer、image scramble timer、view timer、holding timer；加上 MouseTracker 两个常驻 timer，活动期仍存在多个独立时钟。模块拆分了，时钟并未真正统一。
 - 图片动画的 QPainter 路径每帧重新做 QImage 缩放、像素化二次缩放、QPixmap 转换；堆叠缩略图也逐帧缩放/转换。多图动画时这比 Python spring 数学更可能造成主线程掉帧，应缓存最终 pixmap 与有限级别的像素化帧。
 - 异步图片 worker 还有并发/顺序风险：`as_completed` 按下载完成顺序追加，可能打乱原图片顺序；`quit()` 不会主动中止自定义 QThread.run 内的 ThreadPool 下载；共享 `_worker_existing_images` 可能被下一次复制覆盖；初始已有图片又在 `images_updated` 中合并后追加，存在重复图片风险。
+- 当前未暂存范围在本轮开始前只包含 planning711 文档；动画、状态机、鼠标和渲染器仍是审查时的待修版本。
+- P0–P2 实施范围明确为：P0 状态/时序错误；P1 scramble、图片 reveal 与退出路径；P2 单一活动期时钟、按需鼠标追踪、图片/缩略图缓存。剪贴板事件重构和打包瘦身不在本轮实施范围。
+- P0–P2 首轮实现已完成：状态机新增 PULSE 短路径和中途退出转换；PropertyEngine 改为 `QElapsedTimer + PreciseTimer`，作为窗口活动期唯一 frame clock；FeedbackWidget 取消三个独立逐帧 QTimer；MouseTracker 取消内部双定时器并由窗口 `frame_tick` 推进。
+- 图片路径已在图片更新时缓存 25 个像素化 reveal 帧、主图和堆叠缩略图；每次 paint 不再缩放 QImage 或创建 QPixmap。
+- 静态编译、spring 数值检查和状态机 smoke test 已通过；`rg` 确认 FeedbackWidget/MouseTracker 不再保留旧的 stack/scramble/image/poll/update timer。`ui/scramble_text.py` 仍是未接入的旧独立组件，不参与 FeedbackWidget 动画。
 
 ## Technical Decisions
 | Decision | Rationale |

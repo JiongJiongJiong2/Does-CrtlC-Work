@@ -163,8 +163,11 @@ class ClipboardFXApp:
             holding_mode=is_holding
         )
         self._current_widget.animation_complete.connect(self._on_animation_complete)
+        self._current_widget.frame_tick.connect(self.mouse_tracker.advance)
         
-        # 设置初始位置
+        # 反馈出现时才开始追踪，空闲期不保留高频计时器。
+        self.mouse_tracker.start_tracking()
+        self._mouse_x, self._mouse_y = self.mouse_tracker.get_current_position()
         self._current_widget.move_to_position(self._mouse_x, self._mouse_y)
         
         # 开始动画
@@ -175,6 +178,7 @@ class ClipboardFXApp:
         if self._current_widget:
             self._current_widget.deleteLater()
             self._current_widget = None
+        self.mouse_tracker.stop_tracking()
             
     def _toggle_holding_mode(self):
         """切换 Holding 模式（鼠标中键）"""
@@ -192,6 +196,7 @@ class ClipboardFXApp:
             self._current_widget.stop()
             self._current_widget.deleteLater()
             self._current_widget = None
+            self.mouse_tracker.stop_tracking()
         self._update_tray_status()
 
     def _update_tray_status(self):
@@ -218,9 +223,6 @@ class ClipboardFXApp:
         """运行应用"""
         # 显示托盘图标
         self.tray.show()
-        
-        # 启动鼠标追踪
-        self.mouse_tracker.start_tracking()
         
         # 启动剪贴板监听
         self.clipboard_monitor.start_monitoring()

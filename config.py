@@ -7,6 +7,7 @@ ANIMATION_DURATION = {
     'dot_appear': 200,        # 圆点出现
     'box_expand': 250,        # 框展开
     'text_scramble': 1000,    # 文字解码
+    'image_reveal': 1000,     # 图片像素化揭现
     'view_time': 2800,        # 展示时间（非 holding 模式）
     'box_shrink': 350,        # 框收缩成线
     'line_shrink': 250,       # 线收缩回圆点

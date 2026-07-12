@@ -4,7 +4,7 @@
 基于当前未暂存改动、历史实现与 TMP 动画原型，明确动画退化原因、核心剪贴板逻辑问题，以及 Python/C#/C++ 的合理演进路线，并给出可执行的优先级计划。
 
 ## Current Phase
-Phase 5 (complete)
+Phase 6 (implementation complete; manual visual QA pending)
 
 ## Phases
 
@@ -38,6 +38,14 @@ Phase 5 (complete)
 - [x] 交付用户可直接决策的建议
 - **Status:** complete
 
+### Phase 6: P0–P2 动画与运行时修复
+- [x] 修复堆叠 spring、ERROR/PASTE 短路径、退场线条和缺失退出转换
+- [x] 将 FeedbackWidget 的逐帧效果合并到一个单调时钟，并让鼠标追踪仅在反馈活动时运行
+- [x] 缓存主图/缩略图渲染，减少逐帧缩放与 QPixmap 转换
+- [x] 添加可运行的状态机和动画逻辑测试，验证不回归
+- [x] 在 planning711 文档标记完成项、剩余项和验证结果
+- **Status:** complete
+
 ## Key Questions
 1. TMP 原型与当前动画在状态机、帧时序、缓动、合成方式上分别差在哪里？
 2. 当前实现检测的是 Ctrl+C 按键、选中文本，还是系统剪贴板实际变化？
@@ -52,6 +60,8 @@ Phase 5 (complete)
 | 当前版本继续 Python，暂不做 pybind11 混合 | 现有瓶颈不是 CPU 数学，混合方案不移除 Python/PySide/Qt，体积收益极低 |
 | 长期 Windows-only 候选为 C# WPF | 原生剪贴板/消息窗口集成成熟，维护成本明显低于 C++ Win32 |
 | 系统剪贴板事件与 sequence number 作为成功依据 | 比内容 fingerprint 更符合产品语义，并覆盖非 Ctrl+C 的复制入口 |
+| 本轮只实施 P0–P2 动画/运行时修复 | 用户明确排除 Python+C++ 与 C#，剪贴板事件重构和打包瘦身留待后续阶段 |
+| P0–P2 的实现验收以自动化测试为准，视觉验收单列 | 当前环境能够可靠运行 offscreen Qt 测试；原型手感仍应在真实桌面录屏下确认 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |

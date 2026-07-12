@@ -1,65 +1,76 @@
-"""
-ImageRenderer - 主图渲染器
-从 FeedbackWidget._draw_main_image 抽取的图片绘制逻辑
-包含：像素化渐显、收缩动画、占位框
-"""
+"""主图渲染器：预先缓存缩放和像素化帧，绘制阶段不再重复转换。"""
 
-from PySide6.QtGui import QPainter, QColor, QPen, QPixmap, QPainterPath
+from dataclasses import dataclass
+from typing import List, Optional
+
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage, QPainter, QColor, QPainterPath, QPen, QPixmap
+
 from config import IMAGE_STACK
 
 
-class ImageRenderer:
-    """主图渲染器 - 纯绘制逻辑，无状态"""
+@dataclass
+class ImageRenderCache:
+    source: QImage
+    final_pixmap: QPixmap
+    reveal_frames: List[QPixmap]
 
+    def pixmap_for_progress(self, progress: float) -> QPixmap:
+        index = min(len(self.reveal_frames) - 1,
+                    max(0, int(progress * (len(self.reveal_frames) - 1))))
+        return self.reveal_frames[index]
+
+
+class ImageRenderer:
     IMAGE_BOX_SIZE = 120
     CORNER_RADIUS = 16
+    REVEAL_FRAME_COUNT = 25
+
+    @classmethod
+    def build_cache(cls, image: Optional[QImage]) -> Optional[ImageRenderCache]:
+        if image is None or image.isNull():
+            return None
+
+        size = cls.IMAGE_BOX_SIZE
+        final_image = image.scaled(size, size, Qt.KeepAspectRatioByExpanding,
+                                   Qt.FastTransformation)
+        final_pixmap = QPixmap.fromImage(final_image)
+        reveal_frames = []
+        for index in range(cls.REVEAL_FRAME_COUNT):
+            progress = index / (cls.REVEAL_FRAME_COUNT - 1)
+            if progress >= 1.0:
+                reveal_frames.append(final_pixmap)
+                continue
+            block = max(5, int(40 * ((1.0 - progress) ** 2)))
+            small_size = max(1, size // block)
+            pixelated = image.scaled(small_size, small_size,
+                                     Qt.KeepAspectRatioByExpanding,
+                                     Qt.FastTransformation).scaled(
+                                         size, size,
+                                         Qt.KeepAspectRatioByExpanding,
+                                         Qt.FastTransformation)
+            reveal_frames.append(QPixmap.fromImage(pixelated))
+        return ImageRenderCache(image, final_pixmap, reveal_frames)
 
     @classmethod
     def paint(cls, painter: QPainter, base_x: float, base_y: float,
-              main_image, scramble_progress: float, vanish_ratio: float,
-              dot_cx: float, dot_cy: float) -> None:
-        """绘制主图（含像素化/收缩动画）
-
-        Args:
-            painter: QPainter 实例
-            base_x: 基准 X
-            base_y: 基准 Y
-            main_image: QImage 主图（可能为 None）
-            scramble_progress: 像素化进度 0~1
-            vanish_ratio: 收缩比例 0~1
-            dot_cx: 圆点中心 X（收缩目标）
-            dot_cy: 圆点中心 Y（收缩目标）
-        """
+              main_image: Optional[QImage], scramble_progress: float,
+              vanish_ratio: float, dot_cx: float, dot_cy: float,
+              cache: Optional[ImageRenderCache] = None) -> None:
         base_size = cls.IMAGE_BOX_SIZE
-
-        if main_image is None:
-            # 占位框
+        if main_image is None or main_image.isNull():
             painter.save()
             painter.setOpacity(IMAGE_STACK.get('placeholder_opacity', 0.5))
             painter.setPen(QPen(QColor(255, 255, 255, 20), 1))
             painter.setBrush(QColor(30, 30, 35, 200))
             painter.drawRoundedRect(int(base_x), int(base_y), base_size, base_size,
-                                   cls.CORNER_RADIUS, cls.CORNER_RADIUS)
+                                    cls.CORNER_RADIUS, cls.CORNER_RADIUS)
             painter.restore()
             return
 
-        # 像素化处理
-        if scramble_progress < 1.0:
-            block = max(5, int(40 * ((1.0 - scramble_progress) ** 2)))
-            small_w = max(1, base_size // block)
-            small_h = max(1, base_size // block)
-            pixelated = main_image.scaled(small_w, small_h,
-                                         Qt.KeepAspectRatioByExpanding, Qt.FastTransformation
-                                         ).scaled(base_size, base_size,
-                                                 Qt.KeepAspectRatioByExpanding, Qt.FastTransformation)
-            pixmap = QPixmap.fromImage(pixelated)
-        else:
-            final_img = main_image.scaled(base_size, base_size,
-                                         Qt.KeepAspectRatioByExpanding, Qt.FastTransformation)
-            pixmap = QPixmap.fromImage(final_img)
-
-        # 收缩动画参数
+        if cache is None or cache.source is not main_image:
+            cache = cls.build_cache(main_image)
+        pixmap = cache.pixmap_for_progress(scramble_progress)
         draw_size = max(2, int(base_size * vanish_ratio))
         draw_x = int(base_x + (dot_cx - base_x) * (1.0 - vanish_ratio))
         draw_y = int(base_y + (dot_cy - base_y) * (1.0 - vanish_ratio))
@@ -67,18 +78,14 @@ class ImageRenderer:
 
         painter.save()
         painter.setOpacity(vanish_ratio)
-
-        # 背景框
         painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
         painter.setBrush(QColor(17, 17, 17, 220))
-        painter.drawRoundedRect(int(draw_x), int(draw_y), draw_size, draw_size,
-                               draw_radius, draw_radius)
-
-        # 裁剪并绘制图片
+        painter.drawRoundedRect(draw_x, draw_y, draw_size, draw_size,
+                                draw_radius, draw_radius)
         clip_path = QPainterPath()
-        clip_path.addRoundedRect(float(draw_x), float(draw_y),
-                                float(draw_size), float(draw_size),
-                                float(draw_radius), float(draw_radius))
+        clip_path.addRoundedRect(float(draw_x), float(draw_y), float(draw_size),
+                                 float(draw_size), float(draw_radius),
+                                 float(draw_radius))
         painter.setClipPath(clip_path)
-        painter.drawPixmap(int(draw_x), int(draw_y), draw_size, draw_size, pixmap)
+        painter.drawPixmap(draw_x, draw_y, draw_size, draw_size, pixmap)
         painter.restore()
