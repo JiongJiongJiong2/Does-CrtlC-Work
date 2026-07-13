@@ -17,6 +17,8 @@ from ui.animation.state_machine import AnimationState, AnimationStateMachine
 from ui.components.content_box import ContentBox
 from ui.feedback_widget import FeedbackType, FeedbackWidget
 from ui.text_style import TextStyleResolver
+from ui.tray_menu import TrayMenuPopup
+from main import ClipboardFXApp
 
 
 def core_app():
@@ -73,6 +75,59 @@ class FeedbackRuntimeTests(unittest.TestCase):
         self.assertFalse(hasattr(widget, '_stack_anim_timer'))
         self.assertFalse(hasattr(widget, '_scramble_timer'))
         self.assertFalse(hasattr(widget, '_image_scramble_timer'))
+
+    def test_holding_marker_only_applies_to_copy_feedback(self):
+        copy_widget = FeedbackWidget(FeedbackType.COPY, holding_mode=True)
+        paste_widget = FeedbackWidget(FeedbackType.PASTE, holding_mode=True)
+        normal_copy = FeedbackWidget(FeedbackType.COPY, holding_mode=False)
+        self.assertTrue(copy_widget.is_holding_copy)
+        self.assertFalse(paste_widget.is_holding_copy)
+        self.assertFalse(normal_copy.is_holding_copy)
+
+
+class TrayAndHoldingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_normal_paste_shows_green_feedback_but_holding_paste_exits(self):
+        class Widget:
+            def __init__(self, holding):
+                self._active = True
+                self.is_holding_copy = holding
+                self.exited = False
+
+            def start_exit(self):
+                self.exited = True
+
+        class AppHarness:
+            def __init__(self, widget):
+                self._current_widget = widget
+                self.shown = []
+
+            def _show_feedback(self, feedback_type):
+                self.shown.append(feedback_type)
+
+        normal = AppHarness(Widget(False))
+        ClipboardFXApp._on_paste(normal)
+        self.assertFalse(normal._current_widget.exited)
+        self.assertEqual(normal.shown, [FeedbackType.PASTE])
+
+        holding = AppHarness(Widget(True))
+        ClipboardFXApp._on_paste(holding)
+        self.assertTrue(holding._current_widget.exited)
+        self.assertEqual(holding.shown, [])
+
+    def test_tray_popup_uses_compact_switches_and_language_marker(self):
+        popup = TrayMenuPopup('zh')
+        popup.set_state(feedback_enabled=True, holding_enabled=False)
+        self.assertTrue(popup.feedback_switch.isChecked())
+        self.assertFalse(popup.holding_switch.isChecked())
+        self.assertEqual(popup.language_button.text(), 'EN')
+        self.assertLessEqual(popup.sizeHint().width(), 280)
+        popup.set_language('en')
+        self.assertEqual(popup.language_button.text(), '中')
+        self.assertEqual(popup.holding_label.text(), 'Dismiss on Ctrl+V')
 
     def test_copy_full_exit_keeps_the_two_pixel_line_phase(self):
         original = ANIMATION_DURATION.copy()

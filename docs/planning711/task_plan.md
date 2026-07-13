@@ -4,7 +4,7 @@
 基于当前未暂存改动、历史实现与 TMP 动画原型，明确动画退化原因、核心剪贴板逻辑问题，以及 Python/C#/C++ 的合理演进路线，并给出可执行的优先级计划。
 
 ## Current Phase
-Phase 11 (PyInstaller slimming experiment in progress)
+Phase 12 (Holding semantics and custom tray controls in progress)
 
 ## Phases
 
@@ -80,11 +80,20 @@ Phase 11 (PyInstaller slimming experiment in progress)
 ### Phase 11: PyInstaller 瘦身实验
 - [x] 用隔离环境从当前代码构建未裁剪基线，并记录大小/依赖版本（47,966,119 bytes）
 - [x] 在 spec 中加入可复现的低风险裁剪：翻译、未使用 Qt 模块和非运行时插件
-- [x] 构建裁剪候选包，对比 CArchive 内容与基线大小（26.98 MiB，减少 41.0%）
+- [x] 构建裁剪候选包，对比 CArchive 内容与基线大小（v3：25.91 MiB，减少 43.4%）
 - [x] 运行离屏回归测试，并完成冻结包启动 smoke test
 - [ ] 在真实桌面完成托盘、文本/图片/多图剪贴板、Holding 和高 DPI 手动验收
 - [x] 同步 README、PACKAGING 和 planning711 的构建命令、结果与遗留风险
 - **Status:** in_progress
+
+### Phase 12: Holding 语义与自定义托盘面板
+- [x] 审查 Holding 的 paste、关闭开关、超时与状态显示路径，确认普通反馈会被错误退出且 Ctrl+V 仅代表按键意图
+- [x] 只让 Holding 的复制会话响应 Ctrl+V 退场；普通复制后 Ctrl+V 改为显示绿色 paste 提示
+- [x] 将静默/Holding 改为可勾选、可持久化状态，并补齐状态同步与自动化测试
+- [x] 以圆角深灰自绘 `Qt.Popup` 替代原生托盘 `QMenu`：黄色 Apple 风格开关、EN/中语言标识、小尺寸与 DPI 自适应
+- [x] 补齐中文/English 菜单文案、README 快捷键与计划/发现/进度记录
+- [x] 运行离屏交互测试、静态检查；真实 Windows 托盘位置与视觉/DPI 验收另列
+- **Status:** complete (真实 Windows 视觉/DPI 验收待发布前执行)
 
 ## Key Questions
 1. TMP 原型与当前动画在状态机、帧时序、缓动、合成方式上分别差在哪里？
@@ -117,6 +126,8 @@ Phase 11 (PyInstaller slimming experiment in progress)
 | Phase 10 首次同时新增文档并修改 README 的补丁上下文不匹配 | 1 | 拆分为新增文档和 README 精确补丁后完成 |
 | Phase 10 检索 PyInstaller Qt hook 时误用了已移动的旧文件路径 | 1 | 定位到 `utils/hooks/qt/__init__.py` 后完成源代码审计 |
 | Phase 11 用 `git check-ignore -v` 验证 spec 白名单时误读否定规则输出 | 1 | 改用普通 `git check-ignore -q` 与 `git status`，确认 spec 未被忽略 |
+| Phase 11 使用了不存在的 `pyi-archive_view` 入口，并尝试通过模块入口调用 | 1 | 改用已安装的 `pyi-archive_viewer.exe`；v3 归档确认不含 QtNetwork、QML/Quick/PDF 或软件 OpenGL。 |
+| Phase 12 在两个开关行显示完整快捷键后，离屏面板宽度达到 350px | 1 | 移除弹窗中的冗长快捷键文本，保留 README 中的快捷键说明，使紧凑面板宽度回到 280px 以内。 |
 
 ## Notes
 - 只创建本次审查所需的规划文档，不修改产品代码。

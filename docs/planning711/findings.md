@@ -75,6 +75,9 @@
 - Phase 11 v2 结果：`DoesCtrlCWork.spec` 同时使用 `Analysis.excludes`（阻止无用 PySide6 模块）和对 `a.binaries`/`a.datas` 的目标路径过滤（移除递归带入的 DLL、插件和翻译）。保留 `qwindows`、QtCore/Gui/Widgets、QtNetwork、图片 GIF/JPEG/WebP/ICO 与所有业务依赖。v1 为 35,929,830 bytes；加入 `opengl32sw.dll` 排除后 v2 为 28,288,775 bytes（26.98 MiB），相对基线减少 19,677,344 bytes（18.77 MiB，41.0%）。
 - v2 CArchive 确认无 Qml/Quick/Pdf/VirtualKeyboard/Svg/OpenGL/翻译、低风险插件和 `opengl32sw.dll`；离屏回归 15/15 与冻结包 3 秒启动 smoke test 通过。真实桌面的 clipboard 图片格式、托盘、高 DPI 与软件 OpenGL 回退仍是发布前手动验收项。
 - Phase 11 交付性发现：原 `.gitignore` 的 `*.spec` 规则使 `DoesCtrlCWork.spec` 不受版本控制；已为该唯一标准构建规则增加否定白名单 `!DoesCtrlCWork.spec`。没有此修复，其他机器会回退到无裁剪的临时 spec，瘦身结果不可复现。
+- Phase 11 v3 结果：代码不 import QtNetwork，网络图片下载使用 Python 标准库 `urllib`；因此在 v2 上排除 `Qt6Network.dll` 与 `QtNetwork.pyd`。产物为 27,163,975 bytes（25.91 MiB），相对基线减少 19.84 MiB（43.4%），再比 v2 减少 1.07 MiB。归档未包含 QtNetwork 或此前排除项，15/15 离屏测试和 4 秒冻结启动 smoke test 通过；真实桌面验收仍是发布门槛。
+- Phase 12 审查：`main._on_paste()` 对任意活动反馈调用 `start_exit()`，尽管注释只说 holding；普通复制后 Ctrl+V 因而没有绿色 paste 提示。Holding 由全局快捷键 Ctrl+V 结束，语义只能是“检测到 Ctrl+V 意图”而不是系统级“粘贴成功”。原托盘使用原生 `QMenu`、灰色状态行和命令式“切换”动作，既没有可见 checked 状态，也无法可靠实现圆角深灰/黄色开关视觉；需要改为自绘 `Qt.Popup` 并使用持久化状态。
+- Phase 12 实施：新增 `ui/tray_menu.py` 的无边框 `Qt.Popup`，用逻辑像素与应用默认字体跟随 Windows DPI；面板为紧凑圆角深灰，含黄色 Apple 风格开关以及 `EN`/`中` 语言标识。`QSettings` 保存 feedback、holding、language 三个状态。`FeedbackWidget.is_holding_copy` 把 Ctrl+V 退场限定到 Holding COPY，普通提示则改为绿色 PASTE。离屏 18/18 测试通过；真实 Windows 仍需确认托盘右键激活、位置、多显示器和 100/125/150% DPI 观感。
 
 ## Technical Decisions
 | Decision | Rationale |

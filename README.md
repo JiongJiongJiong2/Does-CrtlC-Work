@@ -21,7 +21,7 @@
 - **Copy Success (Text)** — Yellow indicator dot + expanding panel with scramble-text reveal.
 - **Copy Success (Image)** — 120×120 rounded thumbnail with pixel-style reveal animation.
 - **Multi-Image Stack** — When copying multiple images (2+), a stack effect fans out behind the main thumbnail, with configurable real-thumbnail or placeholder mode.
-- **Holding Mode** — Feedback animation stays on screen until a paste is detected or a timeout is reached, giving you confidence that the copy landed.
+- **Holding Mode** — Copy feedback stays on screen until `Ctrl+V` is detected or a timeout is reached. It represents a paste-key intent, not a system-wide guarantee that the target app accepted the paste.
 - **Parallel Image Loading** — Web images are downloaded concurrently (up to 3 threads), reducing wait time for multi-image clipboard content.
 - **Image Exit Animation** — Thumbnail shrinks toward the yellow indicator dot and disappears in sync with text collapse.
 - **Web Image Compatibility** — Supports clipboard image extraction from:
@@ -56,6 +56,7 @@
 | `Ctrl+C` (no selection / unchanged clipboard) | Red dot (copy failed) |
 | `Ctrl+V` | Green dot (paste detected) |
 | `Ctrl+Shift+M` | Toggle Silent Mode (visual feedback on/off) |
+| `Ctrl+Shift+H` | Toggle Holding Mode (dismiss a held copy on `Ctrl+V`) |
 | `Ctrl+Shift+Q` | Quit the application |
 | Right-click tray icon → Exit | Quit the application |
 
@@ -102,7 +103,7 @@ This release adds multi-image visual feedback, a holding mode that waits for pas
 
 **Highlights**
 - **Multi-Image Stack Animation** — When copying 2+ images (from file manager or web), additional images fan out behind the main thumbnail as a stack. Stack layers use spring-physics animation and can show either real thumbnails or translucent placeholders (configurable via `show_real_thumbnails`).
-- **Holding Mode** — Animation stays visible until a paste (`Ctrl+V`) is detected or a 30-second timeout is reached, giving clear confirmation that the copy-paste cycle completed.
+- **Holding Mode** — Copy feedback stays visible until `Ctrl+V` is detected or a 30-second timeout is reached; this is a paste-key intent indicator rather than a target-app success guarantee.
 - **Parallel Image Download** — Web images are now fetched concurrently using `ThreadPoolExecutor` (up to 3 threads). Copying 3 web images takes ~0.8s instead of ~2.4s.
 - **Full HTML Image Extraction** — All `<img>` tags in clipboard HTML are now extracted (previously only the first), so multi-image web copies are correctly detected.
 - **Configurable Placeholder Opacity** — Image placeholder transparency is now adjustable via `placeholder_opacity` in `IMAGE_STACK` config.

@@ -3,9 +3,11 @@
 
 # Qt for Python's hooks discover dynamic dependencies conservatively. This
 # application is QWidget/QPainter based and deliberately does not ship QML,
-# Quick, PDF, SVG, virtual keyboard, or Qt OpenGL APIs.
+# Quick, PDF, SVG, virtual keyboard, Qt Network, or Qt OpenGL APIs.
 EXCLUDED_QT_BINARIES = {
     'PySide6/Qt6OpenGL.dll',
+    'PySide6/Qt6Network.dll',
+    'PySide6/QtNetwork.pyd',
     'PySide6/Qt6Pdf.dll',
     'PySide6/Qt6Qml.dll',
     'PySide6/Qt6QmlMeta.dll',
@@ -54,6 +56,7 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         'PySide6.QtOpenGL',
+        'PySide6.QtNetwork',
         'PySide6.QtPdf',
         'PySide6.QtQml',
         'PySide6.QtQuick',

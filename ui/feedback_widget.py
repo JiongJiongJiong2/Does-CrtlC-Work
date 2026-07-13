@@ -134,6 +134,11 @@ class FeedbackWidget(QWidget):
         else:
             self._sm.transition('exit_no_stack')
 
+    @property
+    def is_holding_copy(self) -> bool:
+        """Whether this feedback instance represents a copy waiting for Ctrl+V."""
+        return self._holding_mode and self._feedback_type == FeedbackType.COPY
+
     def move_to_position(self, x, y):
         self.move(*mouse_to_window(x, y))
 

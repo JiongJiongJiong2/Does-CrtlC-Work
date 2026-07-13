@@ -125,5 +125,16 @@
   - 用当前 spec 成功构建 `packaging-artifacts/dist-baseline/DoesCtrlCWork.exe`：47,966,119 bytes（45.74 MiB）；新构建不含 pyperclip，但大小与旧包基本一致，确认需实施显式 Qt 收集裁剪。
   - 在 spec 固化 v1：移除翻译、QML/Quick/PDF/VirtualKeyboard/SVG/Qt OpenGL API、无关触摸/TLS/平台和部分图像插件；v1 为 35,929,830 bytes，减少 11.48 MiB（25.1%）。归档检查、15 项离屏测试和冻结包启动 smoke test 通过。
   - 在 v1 基础上单独移除可选 `opengl32sw.dll`；v2 为 28,288,775 bytes（26.98 MiB），相对基线减少 18.77 MiB（41.0%），冻结包启动 smoke test 通过。保留真实桌面功能/高 DPI 验收为发布前待办。
+  - 继续单独验证 QtNetwork：应用网络图片路径使用 `urllib`，未 import QtNetwork；排除 `Qt6Network.dll` 与 `QtNetwork.pyd` 后 v3 为 27,163,975 bytes（25.91 MiB），相对基线减少 19.84 MiB（43.4%），比 v2 再少 1.07 MiB。归档检查、15 项离屏测试和 4 秒冻结启动 smoke test 通过。
   - 统一 `build.bat`、README 与 `DoesCtrlCWork.spec`；构建脚本不再安装全局依赖或生成名称分叉的 `DoseCtrlC.exe`。
   - 修复 `.gitignore`：为 `DoesCtrlCWork.spec` 加入白名单，使标准瘦身规则能够被 Git 提交和在其他机器复现。
+
+### Phase 12: Holding 语义与自定义托盘面板
+- **Status:** complete (真实 Windows 视觉/DPI 验收待发布前执行)
+- Actions taken:
+  - 用户要求修复反直觉的 Holding 逻辑，并将 Windows 托盘菜单改为极简深灰、黄色开关、圆角、小尺寸和 EN/中切换的界面。
+  - 修复 `_on_paste`：仅 Holding 的 COPY 实例会在 Ctrl+V 后退场；普通 COPY 继续显示绿色 PASTE 提示。关闭 Holding 同样只退出该类型会话。
+  - 使用 `QSettings` 持久化复制反馈、Holding 和语言；tooltip 显示当前开关状态，移除灰色不可操作的状态行。
+  - 新增 `ui/tray_menu.py`：以 `Qt.Popup` 替代无法稳定自定义的原生 `QMenu`，提供圆角深灰面板、黄色 Apple 风格开关、`EN`/`中` 小标识和本地化按钮文本。
+  - README 补充 Ctrl+Shift+H，并把 Holding 改为准确的“Ctrl+V 意图”语义。
+  - 新增 Holding/托盘回归测试；完整离屏套件 18/18、`compileall` 和 `git diff --check` 通过。真实 Windows 托盘位置、右键激活与 DPI 视觉仍需手动验收。

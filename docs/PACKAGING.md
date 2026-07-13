@@ -6,7 +6,7 @@
 
 当前应用实际使用 `PySide6.QtCore`、`PySide6.QtGui`、`PySide6.QtWidgets`；不使用 QML、Qt Quick、PDF、SVG、Virtual Keyboard、QtNetwork API 或 Qt OpenGL API。
 
-> 当前 `build.bat` 会生成名为 `DoseCtrlC.exe` 的临时配置，而受版本控制的 `DoesCtrlCWork.spec` 生成 `DoesCtrlCWork.exe`。两者已经分叉；进行瘦身实验时请以 spec 构建命令为准，后续应把脚本统一到同一个 spec。
+> `build.bat` 和 README 均使用受版本控制的 `DoesCtrlCWork.spec`，并生成唯一的 `DoesCtrlCWork.exe`。请不要手工创建临时 spec，否则裁剪结果无法复现。
 
 ## 当前归档的主要体积来源
 
@@ -26,7 +26,7 @@
 | `Qt6OpenGL.dll` | 0.38 MiB | 不需要 Qt OpenGL API |
 | Qt 翻译、TLS、非 Windows 平台和多余图像插件 | 分散 | 大多不需要，逐组验证 |
 
-仅 Qt Qml/Quick/Pdf/VirtualKeyboard/OpenGL、软件 OpenGL 和其关联内容就有约 16 MiB 的归档内空间可作为首轮实验目标。实际收益取决于动态依赖，不能承诺精确数字；本项目的第一轮实验已达到约 27 MiB，而不是期待 PySide6 GUI 变成几 MiB。
+仅 Qt Qml/Quick/Pdf/VirtualKeyboard/OpenGL、软件 OpenGL 和其关联内容就有约 16 MiB 的归档内空间可作为首轮实验目标。实际收益取决于动态依赖，不能承诺精确数字；本项目的第一轮实验已达到约 26 MiB，而不是期待 PySide6 GUI 变成几 MiB。
 
 ## 已执行的实验结果（2026-07-13）
 
@@ -35,8 +35,9 @@
 | 未裁剪基线（PyInstaller 6.21.0） | 45.74 MiB | — | 构建成功；不含已移除的 pyperclip |
 | v1：翻译、未使用模块与低风险插件 | 34.27 MiB | -11.48 MiB / -25.1% | 归档检查、15 项离屏测试、3 秒启动通过 |
 | v2：v1 + `opengl32sw.dll` | **26.98 MiB** | **-18.77 MiB / -41.0%** | 归档检查、3 秒启动通过 |
+| v3：v2 + `Qt6Network.dll` / `QtNetwork.pyd` | **25.91 MiB** | **-19.84 MiB / -43.4%** | 归档检查、15 项离屏测试、4 秒启动通过 |
 
-当前 `DoesCtrlCWork.spec` 已固化 v2 规则，`build.bat` 与 README 均以它为唯一构建入口。v2 尚需在真实桌面完成复制文本、图片、多图、Holding、托盘和高 DPI 手动验收，才可作为正式发布包。
+当前 `DoesCtrlCWork.spec` 已固化 v3 规则，`build.bat` 与 README 均以它为唯一构建入口。v3 尚需在真实桌面完成复制文本、图片、多图、Holding、托盘和高 DPI 手动验收，才可作为正式发布包。
 
 ## 你需要做什么
 

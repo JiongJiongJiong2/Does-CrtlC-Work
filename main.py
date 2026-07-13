@@ -5,14 +5,15 @@ Dose Ctrl+C - 剪贴板复制反馈动画工具
 
 import sys
 import keyboard
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
-from PySide6.QtGui import QIcon, QAction, QPixmap, QPainter, QColor
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
+from PySide6.QtCore import Qt, QSettings
 
 from config import COLORS, SIZES
 from core.mouse_tracker import MouseTracker
 from core.clipboard_monitor import ClipboardMonitor
 from ui.feedback_widget import FeedbackWidget, FeedbackType
+from ui.tray_menu import TrayMenuPopup
 
 
 class ClipboardFXApp:
@@ -25,8 +26,10 @@ class ClipboardFXApp:
         self.app.setApplicationDisplayName("Dose Ctrl+C")
         self._set_windows_app_id()
 
-        self.silent_mode = False
-        self._holding_mode = False  # 必须在 _setup_tray 之前初始化
+        self._settings = QSettings('DoseCtrlC', 'DoseCtrlC')
+        self.silent_mode = not self._settings.value('feedback_enabled', True, type=bool)
+        self._holding_mode = self._settings.value('holding_enabled', False, type=bool)
+        self._language = self._settings.value('tray_language', 'zh', type=str)
         
         # 创建系统托盘
         self._setup_tray()
@@ -62,32 +65,14 @@ class ClipboardFXApp:
         self.tray = QSystemTrayIcon(icon)
         self.tray.setToolTip("Dose Ctrl+C - 剪贴板反馈")
         
-        # 托盘菜单
-        menu = QMenu()
-        
-        # 显示状态
-        self.status_action = QAction("状态: 运行中（提示开启）", menu)
-        self.status_action.setEnabled(False)
-        menu.addAction(self.status_action)
-
-        # 切换静默模式
-        self.toggle_silent_action = QAction("切换静默模式 (Ctrl+Shift+M)", menu)
-        self.toggle_silent_action.triggered.connect(self._toggle_silent_mode)
-        menu.addAction(self.toggle_silent_action)
-
-        # 切换 Holding 模式
-        self.toggle_holding_action = QAction("切换Holding模式 (Ctrl+Shift+H)", menu)
-        self.toggle_holding_action.triggered.connect(self._toggle_holding_mode)
-        menu.addAction(self.toggle_holding_action)
-
-        menu.addSeparator()
-
-        # 退出
-        quit_action = QAction("退出", menu)
-        quit_action.triggered.connect(self._quit)
-        menu.addAction(quit_action)
-        
-        self.tray.setContextMenu(menu)
+        # Native tray QMenu cannot reliably provide the requested rounded,
+        # dark control surface, so use a small DPI-aware Qt.Popup instead.
+        self.tray_menu = TrayMenuPopup(self._language)
+        self.tray_menu.feedback_toggled.connect(self._set_feedback_enabled)
+        self.tray_menu.holding_toggled.connect(self._set_holding_mode)
+        self.tray_menu.language_toggled.connect(self._set_language)
+        self.tray_menu.quit_requested.connect(self._quit)
+        self.tray.setContextMenu(None)
         self.tray.activated.connect(self._on_tray_activated)
         self._update_tray_status()
         
@@ -108,8 +93,13 @@ class ClipboardFXApp:
         return QIcon(pixmap)
         
     def _on_tray_activated(self, reason):
-        """托盘图标被点击"""
-        pass  # 可以添加双击显示设置等功能
+        """Show the compact popup for the normal tray interactions."""
+        if reason in (QSystemTrayIcon.ActivationReason.Context,
+                      QSystemTrayIcon.ActivationReason.Trigger):
+            if self.tray_menu.isVisible():
+                self.tray_menu.hide()
+            else:
+                self.tray_menu.show_near_cursor()
         
     def _on_mouse_move(self, x: float, y: float):
         """鼠标移动回调"""
@@ -135,11 +125,13 @@ class ClipboardFXApp:
         
     def _on_paste(self):
         """粘贴回调"""
-        # 如果当前有 holding 状态的复制动画，触发退场
-        if self._current_widget and self._current_widget._active:
-            if hasattr(self._current_widget, 'start_exit'):
-                self._current_widget.start_exit()
-                return
+        # Ctrl+V only dismisses the copy feedback that explicitly opted into
+        # holding. Ordinary copy feedback must still be replaced by the green
+        # paste confirmation.
+        if (self._current_widget and self._current_widget._active and
+                self._current_widget.is_holding_copy):
+            self._current_widget.start_exit()
+            return
 
         self._show_feedback(FeedbackType.PASTE)
         
@@ -181,17 +173,24 @@ class ClipboardFXApp:
         self.mouse_tracker.stop_tracking()
             
     def _toggle_holding_mode(self):
-        """切换 Holding 模式（鼠标中键）"""
-        self._holding_mode = not self._holding_mode
-        # 如果关闭 holding 且当前有 holding 动画，触发退场
-        if not self._holding_mode and self._current_widget and self._current_widget._active:
-            if hasattr(self._current_widget, 'start_exit'):
-                self._current_widget.start_exit()
+        self._set_holding_mode(not self._holding_mode)
+
+    def _set_holding_mode(self, enabled: bool):
+        """Set the explicit Ctrl+V-dismiss behaviour for future copy feedback."""
+        self._holding_mode = bool(enabled)
+        self._settings.setValue('holding_enabled', self._holding_mode)
+        if (not self._holding_mode and self._current_widget and
+                self._current_widget._active and self._current_widget.is_holding_copy):
+            self._current_widget.start_exit()
         self._update_tray_status()
 
     def _toggle_silent_mode(self):
-        """切换静默模式"""
-        self.silent_mode = not self.silent_mode
+        self._set_feedback_enabled(self.silent_mode)
+
+    def _set_feedback_enabled(self, enabled: bool):
+        """Enable or suppress visual feedback while keeping clipboard monitoring alive."""
+        self.silent_mode = not bool(enabled)
+        self._settings.setValue('feedback_enabled', not self.silent_mode)
         if self.silent_mode and self._current_widget:
             self._current_widget.stop()
             self._current_widget.deleteLater()
@@ -201,13 +200,16 @@ class ClipboardFXApp:
 
     def _update_tray_status(self):
         """更新托盘状态显示"""
-        if self.silent_mode:
-            self.status_action.setText("状态: 运行中（静默）")
-            self.tray.setToolTip("Dose Ctrl+C - 静默运行中")
-        else:
-            holding_tag = " [Holding]" if self._holding_mode else ""
-            self.status_action.setText(f"状态: 运行中（提示开启）{holding_tag}")
-            self.tray.setToolTip(f"Dose Ctrl+C - 剪贴板反馈{holding_tag}")
+        feedback_text = '开' if not self.silent_mode else '关'
+        holding_text = '开' if self._holding_mode else '关'
+        self.tray.setToolTip(
+            f'Dose Ctrl+C\n复制反馈：{feedback_text}\n等待 Ctrl+V：{holding_text}')
+        self.tray_menu.set_state(not self.silent_mode, self._holding_mode)
+
+    def _set_language(self, language: str):
+        self._language = language if language in ('zh', 'en') else 'zh'
+        self._settings.setValue('tray_language', self._language)
+        self.tray_menu.set_language(self._language)
 
     def _set_windows_app_id(self):
         """设置 Windows 任务栏显示标识"""
