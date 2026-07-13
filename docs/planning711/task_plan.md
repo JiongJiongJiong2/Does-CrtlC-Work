@@ -4,7 +4,7 @@
 基于当前未暂存改动、历史实现与 TMP 动画原型，明确动画退化原因、核心剪贴板逻辑问题，以及 Python/C#/C++ 的合理演进路线，并给出可执行的优先级计划。
 
 ## Current Phase
-Phase 9 (implementation complete; Windows visual QA pending)
+Phase 11 (PyInstaller slimming experiment in progress)
 
 ## Phases
 
@@ -70,6 +70,22 @@ Phase 9 (implementation complete; Windows visual QA pending)
 - [ ] 在真实 Windows 桌面确认 ASCII block 与中文最终文本的观感
 - **Status:** complete
 
+### Phase 10: 打包瘦身审计与文档整理
+- [x] 从当前 PyInstaller onefile 产物读取归档清单，量化主要体积来源
+- [x] 对照实际 import，识别可排除的 Qt 模块、插件、翻译和重复构建配置
+- [x] 整理 Markdown：建立文档入口，归档过时的 C++ 计划与开发日志，更新 README 链接
+- [x] 写出可执行的 PyInstaller 瘦身实验步骤、预期收益和功能验收清单
+- **Status:** complete
+
+### Phase 11: PyInstaller 瘦身实验
+- [x] 用隔离环境从当前代码构建未裁剪基线，并记录大小/依赖版本（47,966,119 bytes）
+- [x] 在 spec 中加入可复现的低风险裁剪：翻译、未使用 Qt 模块和非运行时插件
+- [x] 构建裁剪候选包，对比 CArchive 内容与基线大小（26.98 MiB，减少 41.0%）
+- [x] 运行离屏回归测试，并完成冻结包启动 smoke test
+- [ ] 在真实桌面完成托盘、文本/图片/多图剪贴板、Holding 和高 DPI 手动验收
+- [x] 同步 README、PACKAGING 和 planning711 的构建命令、结果与遗留风险
+- **Status:** in_progress
+
 ## Key Questions
 1. TMP 原型与当前动画在状态机、帧时序、缓动、合成方式上分别差在哪里？
 2. 当前实现检测的是 Ctrl+C 按键、选中文本，还是系统剪贴板实际变化？
@@ -98,6 +114,9 @@ Phase 9 (implementation complete; Windows visual QA pending)
 | 完成报告后再次从工作区根调用 git status | 2 | 已保留已知仓库边界；最终状态检查改到 `dose-ctrlc/` |
 | P8 验证命令中的 PowerShell 引号未闭合 | 1 | 拆分测试与检索命令，避免在正则中嵌套双引号 |
 | P8.1 更新 PROJECT_REVIEW 的首个补丁上下文不匹配 | 1 | 读取实际段落后使用精确上下文补丁完成更新 |
+| Phase 10 首次同时新增文档并修改 README 的补丁上下文不匹配 | 1 | 拆分为新增文档和 README 精确补丁后完成 |
+| Phase 10 检索 PyInstaller Qt hook 时误用了已移动的旧文件路径 | 1 | 定位到 `utils/hooks/qt/__init__.py` 后完成源代码审计 |
+| Phase 11 用 `git check-ignore -v` 验证 spec 白名单时误读否定规则输出 | 1 | 改用普通 `git check-ignore -q` 与 `git status`，确认 spec 未被忽略 |
 
 ## Notes
 - 只创建本次审查所需的规划文档，不修改产品代码。

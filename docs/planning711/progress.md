@@ -106,3 +106,24 @@
   - `docs/planning711/task_plan.md`（更新）
   - `docs/planning711/findings.md`（更新）
   - `docs/planning711/progress.md`（更新）
+
+### Phase 10: 打包瘦身审计与文档整理
+- **Status:** complete
+- Actions taken:
+  - 用户要求调查 45 MB 打包体积、明确可做的瘦身措施，并整理 Markdown 文件。
+  - 读取当前 PyInstaller CArchive：确认代码只使用 QtCore/Gui/Widgets，但产物收集了 Qml、Quick、Pdf、VirtualKeyboard、OpenGL、软件 OpenGL、翻译和大量无关插件；`.spec` 没有排除规则。
+  - 盘点 Markdown：根目录的 C++ 混合计划和多图开发日志均为历史文档，当前结论和执行记录集中在 `docs/planning711/`，准备建立 docs 导航和归档目录。
+  - 新增 `docs/PACKAGING.md`，记录 45.73 MiB 旧包的归档证据、可排除组件、28–35 MiB 的合理首轮目标、隔离环境基线构建和分组验收矩阵；明确当前 `build.bat` 与 spec 的产物名已分叉。
+  - 新增 `docs/README.md` 作为唯一索引；根目录 `PLAN_CPP_HYBRID.md` 和 `DEVLOG_STACK_FEATURE.md` 移入 `docs/archive/`，README 改为链接到文档入口并移除已废弃的 pyperclip 描述。
+
+### Phase 11: PyInstaller 瘦身实验
+- **Status:** in_progress
+- Actions taken:
+  - 用户授权开始执行打包瘦身；采用“隔离基线 → 低风险裁剪 → 构建内容/大小对比 → 回归与桌面验收”的顺序。
+  - 保留 `qwindows` 平台插件、当前图片相关路径和 `opengl32sw.dll`，直到前一轮裁剪证明稳定；不直接删除 Python 或 PySide6 安装目录中的文件。
+  - 创建隔离 `.venv`；首次 pip 安装因沙箱网络策略（WinError 10013）失败，获得授权后成功安装 PySide6 6.11.1、keyboard 0.13.5、PyInstaller 6.21.0 及构建依赖。
+  - 用当前 spec 成功构建 `packaging-artifacts/dist-baseline/DoesCtrlCWork.exe`：47,966,119 bytes（45.74 MiB）；新构建不含 pyperclip，但大小与旧包基本一致，确认需实施显式 Qt 收集裁剪。
+  - 在 spec 固化 v1：移除翻译、QML/Quick/PDF/VirtualKeyboard/SVG/Qt OpenGL API、无关触摸/TLS/平台和部分图像插件；v1 为 35,929,830 bytes，减少 11.48 MiB（25.1%）。归档检查、15 项离屏测试和冻结包启动 smoke test 通过。
+  - 在 v1 基础上单独移除可选 `opengl32sw.dll`；v2 为 28,288,775 bytes（26.98 MiB），相对基线减少 18.77 MiB（41.0%），冻结包启动 smoke test 通过。保留真实桌面功能/高 DPI 验收为发布前待办。
+  - 统一 `build.bat`、README 与 `DoesCtrlCWork.spec`；构建脚本不再安装全局依赖或生成名称分叉的 `DoseCtrlC.exe`。
+  - 修复 `.gitignore`：为 `DoesCtrlCWork.spec` 加入白名单，使标准瘦身规则能够被 Git 提交和在其他机器复现。

@@ -79,4 +79,5 @@ MAX_TEXT_LENGTH = 45
 
 # Unicode 块字符池
 BLOCK_CHARS = ['█', '▓', '▒', '░', '▖', '▗', '▘', '▙', '▚', '▛', '▜', '▝', '▞', '▟']
+# SCRAMBLE_CHARS = '!@#$%^&*()_+-=[]{}|;:,./<>?'
 SCRAMBLE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,./<>?'

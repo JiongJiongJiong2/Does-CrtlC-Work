@@ -1,7 +1,7 @@
 @echo off
-echo Building DoseCtrlC...
-pip install pyinstaller -q
-pyinstaller --name "DoseCtrlC" --onefile --windowed --icon app_icon.ico --version-file version.txt --clean main.py
+setlocal
+echo Building DoesCtrlCWork from the version-controlled slimming spec...
+python -m PyInstaller --noconfirm --clean DoesCtrlCWork.spec
+if errorlevel 1 exit /b %errorlevel%
 echo.
-echo Build complete! Output: dist\DoseCtrlC.exe
-pause
+echo Build complete! Output: dist\DoesCtrlCWork.exe

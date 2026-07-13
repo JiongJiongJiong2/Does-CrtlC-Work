@@ -67,6 +67,14 @@
 - Phase 8 实施完成：`ui/text_style.py` 按 CJK/emoji/Latin 解析并缓存 QFont/QFontMetricsF；中文使用 Windows UI 字体候选且 0 字距，Latin 保留轻微 0.5px 代码字距。FeedbackWidget 以真实 advance 宽度和省略文本创建目标宽度/最终 QStaticText，ContentBox 仅绘制缓存对象；scramble 刷新间隔为 33ms。
 - 离屏测试目前覆盖 CJK、混排、emoji 样式选择，真实 metrics 宽度，33ms 节流，长中文省略和 QStaticText 绘制。真实 Windows 字体实际解析和视觉/帧耗时仍需人工验收。
 - P8.1 复查确认：33ms 的 scramble 字面刷新约为 30fps，而 PropertyEngine 仍以约 60fps 推进窗口；两套节奏不同会使 ASCII block 看起来慢半拍。旧循环每次还为整段文字重新随机，导致噪声跳变过大。修复改用持久化字符缓冲：已解码字符只写入一次、前沿 4 个 block 每帧更新、远端噪声每帧只轮换有限字符；刷新间隔改为 16ms。
+- Phase 10 打包审计（2026-07-13）：当前 `dist/DoesCtrlCWork.exe` 为 47,954,729 bytes（45.73 MiB），PyInstaller onefile CArchive 显示它包含 Python 3.14 runtime、PySide6/Qt 与插件。代码只导入 QtCore、QtGui、QtWidgets，却被打入 Qt6Network、Qt6OpenGL、Qt6Pdf、Qt6Qml、Qt6Quick、Qt6Svg、Qt6VirtualKeyboard、全部翻译和大量非 Windows 平台/图像/TLS 插件；`.spec` 的 `excludes` 为空，正是误收集的直接原因。
+- 主要未压缩体积项包括：`opengl32sw.dll` 20.6 MiB、Qt6Core 10.0 MiB、Qt6Gui 9.1 MiB、Qt6Quick 6.3 MiB、Qt6Widgets 6.3 MiB、Qt6Qml 5.1 MiB、Qt6Pdf 4.4 MiB、Python runtime 6.5 MiB。前五个 Qt 非必需 DLL（Qml/Quick/Pdf/VirtualKeyboard/OpenGL）与软件 OpenGL 是第一轮排除目标；需通过构建后在干净 Windows 上运行托盘、复制文本/图片、网络图片、图标和高 DPI 验收。
+- Markdown 盘点：根目录 `PLAN_CPP_HYBRID.md`（39.5 KB）已与当前“不做 Python+C++/C# 迁移”的决定冲突；`DEVLOG_STACK_FEATURE.md`（7.3 KB）是历史实现日志。当前结论在 `docs/planning711/PROJECT_REVIEW.md`，计划/发现/进度在同目录；应增加 `docs/README.md` 作为唯一导航，并把两份历史 Markdown 移到 `docs/archive/` 保留而非删除。
+- Phase 11 基线（2026-07-13）：在新建 `.venv`（Python 3.14.4、PySide6 6.11.1、PyInstaller 6.21.0）中用当前 `DoesCtrlCWork.spec` 构建成功，输出 `packaging-artifacts/dist-baseline/DoesCtrlCWork.exe` 为 47,966,119 bytes（45.74 MiB），比旧包略大 11,390 bytes。新包告警中没有 `pyperclip`，证明旧包确实过时；仅升级 PyInstaller 不产生体积收益。
+- 新基线仍自动处理了 `hook-PySide6.QtNetwork.py`，并收集 Qml/Quick/Pdf/VirtualKeyboard/OpenGL/Svg 等 DLL。PyInstaller 的默认 Qt hook 会根据动态依赖递归收集，因此 `Analysis.excludes` 不能单独保证二进制 DLL/插件被移除；需在受版本控制的 spec 中对 `a.binaries`/`a.datas` 执行明确过滤，并通过打包后验证。
+- Phase 11 v2 结果：`DoesCtrlCWork.spec` 同时使用 `Analysis.excludes`（阻止无用 PySide6 模块）和对 `a.binaries`/`a.datas` 的目标路径过滤（移除递归带入的 DLL、插件和翻译）。保留 `qwindows`、QtCore/Gui/Widgets、QtNetwork、图片 GIF/JPEG/WebP/ICO 与所有业务依赖。v1 为 35,929,830 bytes；加入 `opengl32sw.dll` 排除后 v2 为 28,288,775 bytes（26.98 MiB），相对基线减少 19,677,344 bytes（18.77 MiB，41.0%）。
+- v2 CArchive 确认无 Qml/Quick/Pdf/VirtualKeyboard/Svg/OpenGL/翻译、低风险插件和 `opengl32sw.dll`；离屏回归 15/15 与冻结包 3 秒启动 smoke test 通过。真实桌面的 clipboard 图片格式、托盘、高 DPI 与软件 OpenGL 回退仍是发布前手动验收项。
+- Phase 11 交付性发现：原 `.gitignore` 的 `*.spec` 规则使 `DoesCtrlCWork.spec` 不受版本控制；已为该唯一标准构建规则增加否定白名单 `!DoesCtrlCWork.spec`。没有此修复，其他机器会回退到无裁剪的临时 spec，瘦身结果不可复现。
 
 ## Technical Decisions
 | Decision | Rationale |

@@ -71,23 +71,29 @@ If you only want to use it, download the `.exe` from Releases.
 
 ## Build
 
-Recommended (avoid interpreter mismatch):
+Build instructions and the measured package-size audit are in [docs/PACKAGING.md](docs/PACKAGING.md). The current release build remains PyInstaller onefile:
 
 ```bash
 cd dose-ctrlc
-python -m PyInstaller --noconfirm --clean --name "DoesCtrlCWork" --onefile --windowed --icon app_icon.ico --version-file version.txt --add-data "config.py;." main.py
+python -m PyInstaller --noconfirm --clean DoesCtrlCWork.spec
 ```
 
 If you use Conda and want to force a specific env:
 
 ```bash
-conda run -n ctrlc python -m PyInstaller --noconfirm --clean --name "DoesCtrlCWork" --onefile --windowed --icon app_icon.ico --version-file version.txt --add-data "config.py;." main.py
+conda run -n ctrlc python -m PyInstaller --noconfirm --clean DoesCtrlCWork.spec
 ```
 
 Output exe location: `dist/DoesCtrlCWork.exe`.
 
 > Note: `keyboard` library requires **Administrator privileges** for global hotkey detection on Windows.  
 > Right-click the exe and choose "Run as administrator".
+
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [Current technical review and status](docs/planning711/PROJECT_REVIEW.md)
+- [Packaging slimming guide](docs/PACKAGING.md)
 
 ## New Release Description
 ### v2.1.0 — Multi-Image Stack + Holding Mode + Parallel Loading
@@ -116,7 +122,6 @@ This release adds multi-image visual feedback, a holding mode that waits for pas
 |---------------------|---------|
 | Python | Core language |
 | PySide6 (Qt 6) | GUI framework |
-| pyperclip | Clipboard text fallback |
 | keyboard | Global hotkey listener |
 | PyInstaller | Windows executable packaging |
 

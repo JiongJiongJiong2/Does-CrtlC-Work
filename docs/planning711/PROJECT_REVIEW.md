@@ -225,7 +225,7 @@ P0 动画运行时错误与状态路径
 | P2：真实桌面性能基线与录屏对照 TMP | 未完成 | 需要在正常 Windows 桌面实测空闲 CPU、多图帧耗时和 60fps 录屏。 |
 | Phase 3：系统剪贴板事件与 sequence number | 已完成（Qt 后端） | 使用 `QClipboard.dataChanged` 通知，并在 Windows 用 `GetClipboardSequenceNumber` 去重；Ctrl+C 改为 pending intent + 700ms 确认超时。 |
 | Phase 3：直接 `WM_CLIPBOARDUPDATE` 后端 | 未开始 | 仅当 Qt 事件在目标 Windows 环境出现平台问题时再增加，避免两套监听器重复触发。 |
-| Phase 4：PyInstaller/Qt 瘦身实验 | 未开始 | 保持在下一阶段。 |
+| Phase 4：PyInstaller/Qt 瘦身实验 | 自动验证完成；桌面验收待办 | 隔离环境基线为 45.74 MiB；spec 裁剪后的 v2 为 26.98 MiB（-41.0%），离屏测试和冻结包启动通过。发布前仍需手动验证托盘、剪贴板图片/多图、Holding、高 DPI 与软件 OpenGL 回退。 |
 | Python+C++ 混合、C# 迁移 | 不做 | 按本轮产品决策不实施。 |
 
 验证：`QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v` 已通过 12 项测试；`python -m compileall -q .` 和 `git diff --check` 通过。
