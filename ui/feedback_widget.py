@@ -4,12 +4,14 @@ import random
 from enum import Enum, auto
 from typing import List, Optional
 
-from PySide6.QtCore import QTimer, Qt, QEasingCurve, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPixmap, QStaticText
+from PySide6.QtCore import QPoint, QTimer, Qt, QEasingCurve, Signal
+from PySide6.QtGui import (QColor, QGuiApplication, QImage, QPainter, QPixmap,
+                           QStaticText)
 from PySide6.QtWidgets import QWidget
 
 from config import (ANIMATION_DURATION, BLOCK_CHARS, COLORS, IMAGE_STACK,
                     SCRAMBLE_CHARS, SIZES, TEXT_RENDER)
+from core.taskbar_boundary import TaskbarBoundary
 from ui.animation.property_engine import PropertyEngine
 from ui.animation.spring_ease import spring_ease
 from ui.animation.state_machine import AnimationState, AnimationStateMachine
@@ -17,7 +19,9 @@ from ui.components.content_box import ContentBox
 from ui.components.dot_renderer import DotRenderer
 from ui.components.image_renderer import ImageRenderCache, ImageRenderer
 from ui.components.stack_layer import StackLayer
-from ui.feedback_layout import (DOT_CX, DOT_CY, image_base_pos, mouse_to_window,
+from ui.feedback_layout import (DOT_CX, DOT_CY, dock_feedback_position,
+                                bottom_dock_dot_y, image_base_pos,
+                                visible_content_bounds,
                                 window_size)
 from ui.text_style import TextStyle, TextStyleResolver
 
@@ -33,8 +37,12 @@ class FeedbackWidget(QWidget):
     frame_tick = Signal(float)
 
     def __init__(self, feedback_type, text="", images=None,
-                 image_count=0, holding_mode=False, parent=None):
+                 image_count=0, holding_mode=False, parent=None,
+                 ui_scale=1.0, cursor_offset=None):
         super().__init__(parent)
+        self._ui_scale = max(1.0, min(float(ui_scale), 1.5))
+        self._cursor_offset = cursor_offset or (
+            float(SIZES['mouse_offset_x']), float(SIZES['mouse_offset_y']))
         self._feedback_type = feedback_type
         self._text = text
         self._text_style: TextStyle = TextStyleResolver.resolve(text)
@@ -72,6 +80,8 @@ class FeedbackWidget(QWidget):
         self._image_scramble_progress = 0.0
         self._vanish_ratio = 1.0
         self._display_text = ""
+        self._dock_right = False
+        self._dock_bottom = False
 
         self._target_width = 0.0
         if feedback_type == FeedbackType.COPY and self._text:
@@ -140,7 +150,51 @@ class FeedbackWidget(QWidget):
         return self._holding_mode and self._feedback_type == FeedbackType.COPY
 
     def move_to_position(self, x, y):
-        self.move(*mouse_to_window(x, y))
+        screen = QGuiApplication.screenAt(QPoint(int(x), int(y)))
+        if screen is not None:
+            available = screen.availableGeometry()
+            geometry = screen.geometry()
+            normal_right, normal_bottom = visible_content_bounds(
+                self._target_width, self._has_image, self._image_count)
+            normal_bottom_edge = (y + self._cursor_offset[1] - DOT_CY * self._ui_scale +
+                                  normal_bottom * self._ui_scale)
+            screen_bottom = geometry.y() + geometry.height()
+            if (normal_bottom_edge > available.y() + available.height() -
+                    12 * self._ui_scale or
+                    y > screen_bottom - 96 * self._ui_scale):
+                effective_bottom = TaskbarBoundary.effective_bottom(
+                    screen, int(self.winId()))
+            else:
+                effective_bottom = available.y() + available.height()
+            bottom_docked = (normal_bottom_edge > effective_bottom -
+                             12 * self._ui_scale)
+            image_above = bottom_docked and self._has_image
+            dot_cy = (bottom_dock_dot_y(self._image_count)
+                      if image_above else DOT_CY)
+            visible_right, visible_bottom = visible_content_bounds(
+                self._target_width, self._has_image, self._image_count,
+                dot_cy, image_above)
+            win_x, win_y, dock_right = dock_feedback_position(
+                x, y, self.width(), self._ui_scale, *self._cursor_offset,
+                visible_right, visible_bottom,
+                (available.x(), available.y(),
+                 available.width(),
+                 max(0, int(effective_bottom - available.y()))), dot_cy)
+            if self._dock_right != dock_right or self._dock_bottom != bottom_docked:
+                self._dock_right = dock_right
+                self._dock_bottom = bottom_docked
+                self.update()
+        else:
+            # This only occurs transiently while displays are reconfigured.
+            visible_right, visible_bottom = visible_content_bounds(
+                self._target_width, self._has_image, self._image_count)
+            win_x, win_y, dock_right = dock_feedback_position(
+                x, y, self.width(), self._ui_scale, *self._cursor_offset,
+                visible_right, visible_bottom, (0, 0, 100000, 100000))
+            self._dock_right = dock_right
+            self._dock_bottom = False
+        if self.x() != win_x or self.y() != win_y:
+            self.move(win_x, win_y)
 
     def update_images(self, images, image_count):
         if not self._active or not images:
@@ -187,7 +241,8 @@ class FeedbackWidget(QWidget):
                 self._stack_thumbnail_cache.append(QPixmap.fromImage(scaled))
 
     def _resize_to_content(self) -> None:
-        self.setFixedSize(*window_size(self._target_width, self._has_image))
+        self.setFixedSize(*window_size(
+            self._target_width, self._has_image, self._ui_scale))
 
     def _execute_action(self, action):
         dispatch = {
@@ -479,24 +534,37 @@ class FeedbackWidget(QWidget):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        # All renderers keep using one logical coordinate system. Scaling once
+        # here preserves their relative positions and the existing animation
+        # properties; the QWidget canvas and mouse anchor use the same factor.
+        painter.scale(self._ui_scale, self._ui_scale)
+        direction = -1 if self._dock_right else 1
+        image_above = self._dock_bottom and self._has_image
+        dot_cy = (bottom_dock_dot_y(self._image_count)
+                  if image_above else DOT_CY)
+        logical_width = self.width() / self._ui_scale
+        dot_cx = logical_width - DOT_CX if self._dock_right else DOT_CX
         if self._dot_scale > 0.01:
-            DotRenderer.paint(painter, DOT_CX, DOT_CY, self._dot_scale, self._dot_color)
+            DotRenderer.paint(painter, dot_cx, dot_cy, self._dot_scale, self._dot_color)
         if self._box_width > 1 and self._box_opacity > 0.01:
-            ContentBox.paint(painter, DOT_CX, DOT_CY, self._box_width,
+            ContentBox.paint(painter, dot_cx, dot_cy, self._box_width,
                              self._box_height, self._box_opacity,
                              self._display_text, self._dot_scale,
                              self._text_style,
-                             self._final_text_layout if self._display_text == self._text else None)
+                             self._final_text_layout if self._display_text == self._text else None,
+                             direction)
         if self._has_image:
-            image_x, image_y = image_base_pos(DOT_CX, DOT_CY, self._target_width)
+            image_x, image_y = image_base_pos(
+                dot_cx, dot_cy, self._target_width, direction, image_above)
             if self._stack_progress > 0.01 and self._image_count >= 2:
                 for index in range(min(self._image_count - 1, 2) - 1, -1, -1):
                     thumbnail = (self._stack_thumbnail_cache[index + 1]
                                  if index + 1 < len(self._stack_thumbnail_cache) else None)
                     StackLayer.paint(painter, image_x, image_y,
                                      ImageRenderer.IMAGE_BOX_SIZE, index,
-                                     self._stack_progress, self._images, thumbnail)
+                                     self._stack_progress, self._images, thumbnail,
+                                     direction, -1 if image_above else 1)
             ImageRenderer.paint(painter, image_x, image_y, self._main_image,
                                 self._image_scramble_progress, self._vanish_ratio,
-                                DOT_CX, DOT_CY, self._main_image_cache)
+                                dot_cx, dot_cy, self._main_image_cache)
         painter.end()

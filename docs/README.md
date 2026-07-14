@@ -7,6 +7,7 @@
 | 文档 | 用途 |
 |---|---|
 | [打包瘦身指南](PACKAGING.md) | 当前体积审计、构建实验顺序、验收清单 |
+| [鼠标尺寸自适应方案](CURSOR_SCALING.md) | Windows 光标尺寸读取、缩放上限、防错位策略与验收 |
 | [技术审查与当前状态](planning711/PROJECT_REVIEW.md) | 架构结论、已完成工作、后续优先级 |
 | [执行计划](planning711/task_plan.md) | 可执行任务与完成状态 |
 | [技术发现](planning711/findings.md) | 审计证据和决策理由 |

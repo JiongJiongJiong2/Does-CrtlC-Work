@@ -10,10 +10,11 @@ from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from PySide6.QtCore import Qt, QSettings
 
 from config import COLORS, SIZES
+from core.cursor_metrics import CursorMetrics
 from core.mouse_tracker import MouseTracker
 from core.clipboard_monitor import ClipboardMonitor
 from ui.feedback_widget import FeedbackWidget, FeedbackType
-from ui.tray_menu import TrayMenuPopup
+from ui.tray_menu import create_tray_menu
 
 
 class ClipboardFXApp:
@@ -65,13 +66,16 @@ class ClipboardFXApp:
         self.tray = QSystemTrayIcon(icon)
         self.tray.setToolTip("Does CtrlC Work - 剪贴板反馈")
         
-        # Native tray QMenu cannot reliably provide the requested rounded,
-        # dark control surface, so use a small DPI-aware Qt.Popup instead.
-        self.tray_menu = TrayMenuPopup(self._language)
+        # Windows uses an owner-drawn HMENU for the real system menu loop;
+        # other platforms retain the compact QWidgetAction QMenu.
+        self.tray_menu = create_tray_menu(self._language)
         self.tray_menu.feedback_toggled.connect(self._set_feedback_enabled)
         self.tray_menu.holding_toggled.connect(self._set_holding_mode)
         self.tray_menu.language_toggled.connect(self._set_language)
         self.tray_menu.quit_requested.connect(self._quit)
+        # Do not use QSystemTrayIcon's automatic context-menu path: on Windows
+        # it activates the Qt top-level popup and retracts Explorer's hidden-
+        # icons flyout immediately. Both mouse entries are handled below.
         self.tray.setContextMenu(None)
         self.tray.activated.connect(self._on_tray_activated)
         self._update_tray_status()
@@ -148,14 +152,16 @@ class ClipboardFXApp:
 
         # 创建新的反馈窗口（含 holding 模式和多图支持）
         is_holding = self._holding_mode and feedback_type == FeedbackType.COPY
+        cursor_metrics = CursorMetrics.detect()
         self._current_widget = FeedbackWidget(
             feedback_type, text,
             images=images,
             image_count=image_count,
-            holding_mode=is_holding
+            holding_mode=is_holding,
+            ui_scale=cursor_metrics.ui_scale,
+            cursor_offset=(cursor_metrics.offset_x, cursor_metrics.offset_y),
         )
         self._current_widget.animation_complete.connect(self._on_animation_complete)
-        self._current_widget.frame_tick.connect(self.mouse_tracker.advance)
         
         # 反馈出现时才开始追踪，空闲期不保留高频计时器。
         self.mouse_tracker.start_tracking()

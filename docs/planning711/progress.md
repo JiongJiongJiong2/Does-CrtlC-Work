@@ -146,3 +146,120 @@
   - 确认仅监听 popup 自身 `WindowDeactivate` 无法可靠获知 Explorer 溢出页关闭；新增 QApplication 级 deactivation 收起。
   - 在弹层显示期间启动 40ms 定时器，以 Windows 鼠标按键的按下沿判断面板外点击；点击任务栏、隐藏图标箭头或其它外部位置导致溢出页收起时，面板会立即隐藏。`hideEvent` 停止计时器，空闲期没有轮询。
   - 新增外部点击边沿测试，并更新旧语言控件断言以匹配 EN/中双标识；离屏完整测试 19/19、`compileall` 与 `git diff --check` 均通过。
+
+### Phase 14: 鼠标尺寸自适应反馈 UI
+- **Status:** complete (待真实 Windows 大光标、多屏与 DPI 视觉验收)
+- Actions taken:
+  - 用户要求把已调查的鼠标尺寸方案写入 Markdown 并实现，同时重点防止单独放大组件造成错位。
+  - 新增 `docs/CURSOR_SCALING.md`，记录 Win32 HCURSOR 位图/hotspot、DPR 换算、1.00–1.50 分段比例、16–72 DIP 偏移和验收矩阵；文档索引已增加入口。
+  - 新增 `core/cursor_metrics.py`：通过 `GetCursorInfo/GetIconInfo/GetObjectW` 获取当前 cursor，显式声明 64 位 handle 签名并释放 bitmap；每次反馈读取一次，无常驻 timer，失败/非 Windows 回退原尺寸。
+  - FeedbackWidget 使用统一逻辑坐标：窗口尺寸与 QPainter 同比缩放，鼠标锚点使用 scaled DOT，位置约束在当前屏幕 availableGeometry；修复 StackLayer 覆盖外层 transform 导致堆叠错位的问题。
+  - 新增 6 项 cursor scaling 测试，覆盖比例上限、偏移上限、非 Windows 回退、屏幕 clamp、默认尺寸不变以及 1.5 倍多图堆叠实际绘制。完整测试 25/25，Qt 1.5 scale 专项通过，静态编译与 whitespace 检查通过；本机默认 cursor 实测为 32×32 DIP、1.00 倍。
+  - 生成 1.5 倍文字与多图堆叠离屏预览，确认各组件共享外层缩放后相对位置、圆角和堆叠偏移保持一致；离屏环境缺少项目字体时出现的方框字形不属于缩放回归。
+
+### Phase 15: Windows 系统鼠标大小与反馈位置修复
+- **Status:** complete (待真实 Windows 大鼠标手动验收)
+- **Started:** 2026-07-14
+- 用户在 Windows 设置提高鼠标大小后观察到反馈仍为原尺寸、与鼠标的相对位置也未改变。初步代码审查显示当前仅以 `GetIconInfo/GetObjectW` 读取 `HCURSOR` 位图资源尺寸；需确认 Windows 辅助功能设置是否在显示层缩放该资源，并补充独立的系统设置尺寸来源。
+- **Completed:** 2026-07-14
+- 新增 `CursorBaseSize` 读取：当系统辅助功能尺寸大于 `GetIconInfo` 得到的 cursor 资源尺寸时，等比例放大资源 footprint 与 hotspot 后再选择 UI 档位。普通或第三方资源本身较大时仍以资源尺寸为准。
+- 反馈内容视觉尺寸继续封顶 1.50 倍；避让偏移改为超过 32 DIP 时移动到 cursor 右/下边缘外加间隙，单独封顶 160 DIP。这样 96/128 DIP 光标不会因内容封顶而仍压住反馈；靠近屏幕边缘继续由现有 clamp 约束整个窗口。
+- 新增 Windows 设置覆盖资源尺寸的测试；`tests.test_cursor_scaling` 7/7、完整离屏回归 26/26、`compileall` 和 `git diff --check` 通过。本机当前 `CursorBaseSize=32`，native 检测为 32×32 DIP、1.00 倍与 16 DIP 偏移，默认外观不变。
+
+### Phase 16: 可见内容边缘停靠与右侧镜像布局
+- **Status:** complete (待真实 Windows 边缘停靠手动验收)
+- **Started:** 2026-07-14
+- 用户反馈底/右边缘会过早停止：现有 `clamp_window_position` 按完整透明 QWidget（文本反馈最小 500×180）做约束，而实际文本框只占画布左上角，因此提前留下大块不可见余量。目标改为：底边让可见内容底部保留少量间距并继续横向跟随；右边让黄点/黄线贴近右边安全边距，内容及渐隐方向镜像到左侧。
+- **Completed:** 2026-07-14
+- 新增纯函数 `visible_content_bounds` 和 `dock_feedback_position`：边缘判断以文本、图片与堆叠的可见 right/bottom bounds 为准；底边允许透明画布尾部越出可用工作区，使可见内容底部保持 12 DIP（按 UI scale 换算）间距，同时 X 坐标继续跟随。
+- 右边触发后将画布右侧停在安全边距：`FeedbackWidget` 使用右侧 dot anchor，`ContentBox` 向左绘制并反向渐隐，文字右对齐但不镜像字形；图片与 StackLayer 同步向左展开。修复镜像时第二段黄线误画在左端的问题，黄点与唯一黄线现共用右侧 `dot_cx`。
+- 新增底边横向跟随、右边停靠位置、右侧黄线、文字正常方向和图片/堆叠镜像的离屏测试；cursor scaling 专项 11/11、完整离屏回归 30/30、`compileall` 与 `git diff --check` 通过。生成并人工检查右侧离屏预览；真实 Windows 任务栏、双屏与边界切换手感仍需手动验收。
+
+### Phase 17: 自动隐藏任务栏边界与鼠标跟随帧率方案
+- **Status:** complete (待真实 Windows 任务栏动画手动验收)
+- **Started:** 2026-07-14
+- 当前固定任务栏可由 `QScreen.availableGeometry()` 规避；方案重点是自动隐藏任务栏从屏幕边缘滑出时的动态边界，以及固定 16ms 帧钟在 120/144Hz 显示器上的半刷新率观感。本轮只审查和制定最小实现路线，不修改产品代码。
+- 官方资料确认 Qt work area 适用于固定保留区，并提供 `availableGeometryChanged` 信号；Windows 可用 `ABM_GETSTATE/ABM_GETAUTOHIDEBAREX` 识别指定显示器底边的自动隐藏 appbar。帧率路线修正为“16ms 视觉动画 + 活动期 8ms 位置跟随”，避免违反 Qt 对 refreshRate-driven timer 的警告，也不把 QWidget 架构扩张成新的渲染循环。
+- 读取本机 Qt 屏幕信息（只读）：`DISPLAY1` 约 165Hz，geometry 与 availableGeometry 同为 1707×1067，DPR 1.5。该结果同时支持自动隐藏任务栏边界缺失与固定 16ms 跟随低于高刷屏观感两项诊断。
+- 本机用私有窗口类名查找任务栏句柄失败，方案因此明确不用 `Shell_TrayWnd`；改用公开的 per-monitor `ABM_GETAUTOHIDEBAREX`。不注册 appbar、不监听全局 shell 事件、不写注册表或任务栏配置，只在反馈靠近底边的活动期读取当前矩形。
+- **Completed:** 2026-07-14
+- 新增 `core/taskbar_boundary.py`：固定任务栏沿用 `availableGeometry`；自动隐藏任务栏按当前 monitor 获取底边 appbar 的实时窗口矩形，将 native top 换算为 Qt 逻辑坐标。隐藏激活条不抬高反馈，任务栏进入屏幕后以其上沿作为停靠底边；调用失败安全回退。
+- MouseTracker 从 16ms 绘制 tick 解耦，改为反馈活动期 8ms 精确位置 timer，以实际 elapsed 推进 spring；停止反馈时立即停表。FeedbackWidget 仅在接近底边时查询 taskbar，并在整数位置没有变化时跳过重复 move。
+- 新增自动隐藏任务栏 visible/hidden strip、8ms timer 生命周期和 120ms 活动更新密度测试。专项 16/16、完整离屏回归 33/33、`compileall` 与 `git diff --check` 通过。真实 Qt Windows GUI 诊断在当前执行会话 exit 1 且无可靠输出，因此没有冒充手动验收；自动隐藏任务栏滑入/收起仍需桌面确认。
+
+### Phase 18: 托盘隐藏图标页无点击收起联动
+- **Status:** complete (v2 待真实 Windows 复验)
+- **Started/Completed:** 2026-07-14
+- Phase 13 的 application/window deactivation 与外部鼠标按下沿只能处理失焦/点击；Explorer 隐藏图标页无新点击自行收起时，两者都不会触发。
+- `TrayMenuPopup` 现在在显示前捕获鼠标下方的小型外部顶层窗口，并复用现有仅可见期运行的 40ms timer 观察该宿主是否仍可见。宿主收起时菜单同步隐藏；横跨屏幕的普通任务栏不会被记录，且不依赖 Explorer 私有窗口类名。hideEvent 会停止 timer、清空按钮状态和宿主句柄。
+- 新增“已捕获宿主不可见即关闭菜单”测试；首次单独运行暴露 Python 3.14 `unittest.mock` 未显式导入，修复后专项与完整套件均通过。
+- **Real Windows feedback / v2:** 2026-07-14
+- 用户确认点击外部与隐藏图标栏点击收起的时机已经正确，但无操作等待隐藏图标栏自动收起仍会留下菜单。第一版“句柄存在 + IsWindowVisible”因此判定为不足，未继续标作已验收。
+- v2 使用 `GetCursorPos` 原生坐标捕获托盘点击下方窗口，避免高 DPI 下把 Qt 逻辑坐标错误传给 `WindowFromPoint`；沿父窗口链按 native monitor 尺寸选择最大的小型弹层而不是持久任务栏根窗口。呈现检查增加 `DWMWA_CLOAKED` 与窗口矩形/虚拟桌面相交，覆盖 Shell cloaking 和移出屏幕但保留 HWND 的路径。仍复用菜单可见期 40ms timer，无后台常驻工作。
+
+### Phase 19: 水平单向拖拽/推动跟随
+- **Status:** complete (待真实 Windows 手感复验)
+- **Started/Completed:** 2026-07-14
+- SpringAnimator 记录本帧 target 是否右移：左移/停止继续按原 stiffness、damping 和真实 dt 积分；右移立即把 current X 设为 target 并清空 X velocity。垂直 spring、8ms 活动期 timer、任务栏边界和右侧镜像均未改变。
+- 新增纯 spring 回归：100→80 的第一帧必须仍位于 80–100 之间，验证拖拽滞后；随后 80→90 必须精确到 90 且速度归零，验证固定偏移推动。托盘 DWM 状态纯函数测试一并增加。
+- 专项测试 18/18、完整离屏回归 35/35、`compileall` 与 `git diff --check` 通过。
+- 在未打开隐藏图标页的当前桌面执行只读 native host probe，Win32 调用链正常返回 `None`（没有误把普通桌面/任务栏识别为小型弹层）。
+
+### Phase 20: 托盘先收起顺序与底边图片上置
+- **Status:** complete (待真实 Windows 复验)
+- **Started/Completed:** 2026-07-14
+- 用户明确要求菜单先于隐藏图标栏自动/点击收起。宿主失效检测只能在 Explorer 已经开始收起后运行，因此增加隐藏图标入口专用的 1.6 秒无交互单次 timer；鼠标进入或点击菜单会取消。可见期检测从 40ms 提升为 16ms，并在指针离开触发点、位于菜单外时抢先隐藏菜单，减少外部点击与 Explorer 收起的竞态。直接显示在任务栏中的图标不启动无交互 timer。
+- 图片反馈处于底边停靠时，`bottom_dock_dot_y` 计算画布内锚点，主图用向上 `image_base_pos`，多图 StackLayer Y 方向反转。可见边界改以文本框底部为准，避免图片仍按下方布局参与计算导致提前停靠或裁剪。
+- 新增托盘离开预收起/idle timer、图片上置纯布局和离屏渲染测试。完整离屏测试 39/39、`compileall` 与 `git diff --check` 通过。
+- **Interaction correction:** 用户真机反馈 1.6 秒预收起过快，且指针从图标移动到菜单时会被 departure 检查误判为外部离开。改为 5 秒无交互 timer，并新增 `pointer_entered_menu` 门槛：只有鼠标进入菜单后再离开才预收起；进入/点击菜单立即取消 idle timer。
+
+### Phase 21: 托盘菜单关闭语义行业调研与迁移
+- **Status:** complete (自动化与离屏视觉检查完成，待真实 Windows 复验)
+- **Started/Completed:** 2026-07-14
+- 本轮按用户要求只调查与分析，没有修改产品代码。对照 Microsoft 通知区菜单/TrackPopupMenu、Windows light-dismiss flyout、Qt `QSystemTrayIcon/QMenu/QWidgetAction` 后，确认行业通用语义是由 transient popup 自己处理 owner、焦点和输入：选择命令、Escape、外部按下或失活时关闭；无操作、鼠标仍在外部或悬停离开本身不触发固定倒计时关闭。
+- 当前自绘弹窗把 5 秒 idle、16ms 外部按键/指针轮询、鼠标进入后离开、Explorer 隐藏图标宿主和 DWM 状态共同作为关闭条件，导致多套状态机竞争。推荐下一步迁移为托盘原生 `QMenu`，用 `QWidgetAction` 保留两个黄色开关与 EN/中切换，用 `QAction` 承载退出，并删除所有 Explorer/idle/departure 猜测逻辑。
+- 迁移后需真机验收：直接任务栏图标和隐藏图标入口、外部点击、Escape、键盘导航、开关点击后是否按产品预期保持或关闭、DPI/圆角与 Windows 字体渲染。本轮未运行代码测试，因为没有改变运行代码。
+- **Implementation started:** 用户确认开始迁移，并要求 99% 保持现有窗口的深灰背景、黄色开关、圆角、紧凑排版与展示效果。实现将复用现有 ToggleSwitch/语言控件的布局参数，通过 `QWidgetAction` 放入标准 `QMenu`，只替换顶层弹窗生命周期。
+- **Implementation completed:** `TrayMenuPopup` 现继承 `QMenu`，完整旧面板作为单个 `QWidgetAction` 嵌入，原 210px 宽度、圆角、颜色、间距、开关、语言控件和 hover 样式未改。右键交给 `QSystemTrayIcon.setContextMenu()`，左键仍使用原托盘相对位置调用 `popup()`；开关/语言操作保持菜单，退出按钮主动关闭。
+- 删除全部 5 秒 overflow idle timer、16ms outside-click timer、`GetAsyncKeyState`、pointer departure、Explorer `WindowFromPoint` 宿主捕获和 DWM cloaking 判断。Escape 关闭、控件不误关、托盘持有 context menu 等专项测试通过。
+- 离屏渲染测得 QMenu 与 panel 均为 `210×104`，contents margins 为 `0/0/0/0`，确认没有系统菜单边距改变排版。专项 3/3、完整回归 37/37、`compileall` 与 `git diff --check` 通过；真实 Windows 圆角合成、外部点击、隐藏图标入口与多 DPI 仍保留为最终手动复验。
+
+### Phase 22: 隐藏图标栏共存与分层收起
+- **Status:** complete (自动化完成，待真实 Windows 分层收起复验)
+- **Started/Completed:** 2026-07-14
+- 用户真机确认 Phase 21 迁移后的 QMenu 一打开就让 Explorer 隐藏图标栏收起，因而也失去了“外部点击先关菜单、Shell flyout 稍后按系统延迟收起”的常见层次。
+- 当前右键路径是 `QSystemTrayIcon.setContextMenu()` 自动展示可激活的顶层 QMenu。结合 QMenu 继承 QWidget、popup 隐式抓鼠标以及 Windows flyout 的 light-dismiss 语义，定位为菜单打开时抢激活导致 Explorer 立即失焦；两个问题是同一根因。
+- 本轮按用户表述先完成诊断，没有修改产品代码。下一步最小实施为：保留完整 QWidgetAction 视觉面板；`setContextMenu(None)`，Context/Trigger 统一手动 `popup()`；Windows 设置 `WA_ShowWithoutActivating`。首次外部点击仍由 QMenu mouse grab 关闭菜单，Shell 延迟完全交还系统，不新增 timer/Explorer 轮询。若该属性真机不足，再评估不接受焦点标志及其键盘可访问性代价。
+- **Implementation completed:** `main.py` 取消自动 context menu，Context 与 Trigger 现在统一手动展示同一个 QMenu；`TrayMenuPopup` 在 Windows 设置 `WA_ShowWithoutActivating`。视觉结构、尺寸、圆角、开关和语言布局均未改变，且未加入 `WindowDoesNotAcceptFocus`、timer 或 Shell 窗口探测。
+- 新增/更新测试覆盖 non-activating 属性、托盘 context menu 为空、左右键共用入口、Escape 关闭和内部开关不误关。托盘专项 4/4、完整回归 38/38、`compileall` 与 `git diff --check` 通过。是否能让 Windows 11 隐藏图标栏保持并在首次外部点击后延迟收起，仍必须在真实任务栏会话中确认。
+
+### Phase 23: Windows 原生菜单循环与现有视觉复刻
+- **Status:** complete (实现/真实原生预览完成，待隐藏图标栏真机复验)
+- **Started:** 2026-07-14
+- 用户再次真机确认：non-activating QMenu 仍会让隐藏图标栏在无操作时自行收回，而菜单独自残留。目标已更正为菜单打开期间暂停 Shell overflow idle retract，交互后菜单先关闭、Shell 随后按系统节奏关闭。
+- 官方 Win32 状态证明原生 `TrackPopupMenu` 会进入线程 menu mode，而 QWidget QMenu 没有 HMENU/GUI_POPUPMENUMODE。开始实现无新增依赖的 Windows owner-draw HMENU；现有 QWidgetAction QMenu 保留为跨平台/失败回退。
+- **Implementation completed:** 新增 Windows owner-draw HMENU，使用 `TrackPopupMenuEx` 获取真正的系统 menu loop；GDI 复刻 210px 深灰面板、Segoe UI、黄色开关、EN/中状态、分隔线和 hover。Windows 工厂选择原生实现，其他平台/失败路径保留 QMenu，不新增依赖。
+- feedback、holding、language、quit 均由原生命令返回后发射现有 Qt signals；操作菜单项会先结束菜单 loop，符合用户要求的“发生操作后菜单先收起”。外部点击和 Escape 由 TrackPopupMenuEx 自身处理。
+- 首次真实预览发现 FillRect 等函数缺少 64 位 argtypes，修复后第二次真实菜单预览无异常退出。原生菜单创建验证为 5 项；完整回归 39/39、`compileall` 与 `git diff --check` 通过。剩余验收只是在实际 Windows 11 隐藏图标栏入口静置，确认 Shell 确实因 GUI_POPUPMENUMODE 保持，并在菜单结束后按系统间隔收起。
+
+### Phase 24: 原生菜单视觉/语言回归与任务栏边界异常
+- **Status:** complete (待隐藏图标栏组合场景真机复验)
+- **Started/Completed:** 2026-07-14
+- 定位右下角刷屏异常并非边界算法错误，而是托盘菜单初始化把共享 `GetMonitorInfoW` 的 ctypes 参数签名覆盖为另一份 `MonitorInfo` 类型。两个调用点现统一使用兼容的输出指针签名；任务栏路径补充 `ctypes.ArgumentError` 兜底，失败时安全沿用 Qt 可用区域。
+- 原生菜单显示期间安装当前线程、限定 `EVENT_SYSTEM_MENUPOPUPSTART` 的短生命周期 WinEvent hook；只对 `#32768` 菜单窗口应用 Windows 11 圆角偏好和 8 DIP region，恢复旧设计的 210px 深灰圆角轮廓，不改变黄色开关、字体与紧凑行高。
+- 语言命令现在同步更新状态和 Qt signal 后在同一锚点立即继续原生菜单 loop；界面直接显示新语言，不再要求用户重新点击托盘。feedback/holding/quit 仍会正常结束菜单。
+- 相关专项 35/35、完整回归 40/40、`compileall` 与 `git diff --check` 通过；按真实冲突顺序创建原生菜单后连续读取任务栏边界 5 次，无异常；独立可见原生菜单预览完成且进程无错误退出。最终仍需从 Windows 隐藏图标栏入口确认圆角主观观感与 Shell 静置/分层关闭组合行为。
+
+### Phase 25: 退出电源线稿与菜单视觉微调
+- **Status:** complete (待真实 Windows DPI/隐藏图标栏入口复验)
+- **Started/Completed:** 2026-07-14
+- 退出项在 Qt 与 Windows 两条路径均移除中文/英文文字，改为字体无关的简约电源线稿；Qt 保留中英文 tooltip，Windows 原生菜单继续发出原有 `quit_requested` signal。
+- 菜单边缘圆角由 8 DIP 调整为 10 DIP。210px 宽度保持不变；Qt 上下边距、间距和行内边距微缩，Win32 行高从 26/24/24/7/29 调整为 24/22/22/5/24，整体更紧凑但不改变开关/语言的横向锚点。
+- 新增电源按钮类型、尺寸与中英文 tooltip 测试；完整回归 41/41、`compileall` 与 `git diff --check` 通过。更新后的可见原生预览正常退出，未出现 GDI/菜单循环异常；仍需用户在自己的 DPI 与隐藏图标栏入口下确认最终主观观感。
+
+### Phase 26: 退出项行业规范与卡顿基线
+- **Status:** complete (性能优化待用户确认)
+- **Started/Completed:** 2026-07-14
+- 查阅 Microsoft 通知区规范后确认普通托盘上下文菜单的标准退出项就是 `Exit`；图标不是退出项必需形式。Windows 11 的系统图标推荐通过 `Segoe Fluent Icons`/Symbol 资源使用，并在紧凑图标按钮场景保留 tooltip/可访问标签。项目已将两条菜单路径的退出项恢复为原有中文“退出”/英文“Quit”文字，保留 Phase 25 的 10 DIP 圆角和紧凑间距。
+- 性能基线：文本反馈约 62.3 FPS、CPU 5.2%；图片+堆叠约 61.9 FPS、CPU 19.0%；帧间隔 P95 分别约 16.78/17.11ms。鼠标 8ms 跟随计时器约 123.9Hz。结论是应用侧确实存在固定 16ms（约 62.5 FPS）视觉上限，165Hz 显示器上会显得不够顺滑；图片场景还有更高绘制压力，但当前没有证据表明电脑故障。
+- 本轮没有擅自改动动画时钟，避免把“卡顿”修复和菜单视觉回退混在一起。下一步可选方案是活动期 8ms/自适应视觉 tick + 真机帧间隔/CPU A-B 验收；仍保持项目小型 QWidget/QPainter 架构。

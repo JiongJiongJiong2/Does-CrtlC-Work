@@ -1,23 +1,33 @@
 """P0–P2 动画回归测试；运行前设定 QT_QPA_PLATFORM=offscreen。"""
 
 import os
+import sys
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
-from PySide6.QtCore import QPoint, QTimer
+from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtGui import QImage, QPainter
-from PySide6.QtWidgets import QApplication
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from config import ANIMATION_DURATION, SIZES
-from core.mouse_tracker import MouseTracker
+from core.mouse_tracker import MouseTracker, SpringAnimator
 from ui.animation.property_engine import PropertyEngine
 from ui.animation.spring_ease import spring_ease
 from ui.animation.state_machine import AnimationState, AnimationStateMachine
 from ui.components.content_box import ContentBox
 from ui.feedback_widget import FeedbackType, FeedbackWidget
 from ui.text_style import TextStyleResolver
-from ui.tray_menu import TrayMenuPopup
+from ui.tray_menu import TrayMenuPopup, create_tray_menu
+from ui.windows_tray_menu import (
+    ID_FEEDBACK,
+    ID_HOLDING,
+    ID_LANGUAGE,
+    ID_QUIT,
+    WindowsNativeTrayMenu,
+)
 from main import ClipboardFXApp
 
 
@@ -56,6 +66,19 @@ class AnimationStateTests(unittest.TestCase):
         self.assertEqual(spring_ease(0.0), 0.0)
         self.assertGreater(spring_ease(0.5), 0.0)
         self.assertGreater(spring_ease(1.0), 0.9)
+
+    def test_horizontal_follow_drags_left_but_pushes_right(self):
+        spring = SpringAnimator(stiffness=500, damping=40)
+        spring.reset(100, 100)
+        spring.set_target(80, 100)
+        left_x, _ = spring.step(0.008)
+        self.assertGreater(left_x, 80)
+        self.assertLess(left_x, 100)
+
+        spring.set_target(90, 100)
+        right_x, _ = spring.step(0.008)
+        self.assertEqual(right_x, 90)
+        self.assertEqual(spring.velocity_x, 0)
 
 
 class FeedbackRuntimeTests(unittest.TestCase):
@@ -129,20 +152,89 @@ class TrayAndHoldingTests(unittest.TestCase):
         popup.set_language('en')
         self.assertEqual(popup.holding_label.text(), 'Dismiss on Ctrl+V')
 
-    def test_tray_popup_dismisses_only_on_new_outside_click(self):
+    def test_tray_quit_action_keeps_localized_text(self):
         popup = TrayMenuPopup('zh')
-        popup.resize(210, 120)
-        popup.move(100, 100)
-        popup._pointer_button_down = False
+        self.assertEqual(popup.quit_button.text(), '退出')
+        popup.set_language('en')
+        self.assertEqual(popup.quit_button.text(), 'Quit')
 
-        self.assertFalse(
-            popup._should_dismiss_for_pointer(False, QPoint(0, 0)))
-        self.assertTrue(
-            popup._should_dismiss_for_pointer(True, QPoint(-10, -10)))
+    def test_tray_popup_uses_standard_qmenu_lifecycle(self):
+        popup = TrayMenuPopup('zh')
+        self.assertIsInstance(popup, QMenu)
+        self.assertEqual(
+            popup.testAttribute(Qt.WA_ShowWithoutActivating),
+            sys.platform.startswith('win'))
+        self.assertFalse(hasattr(popup, '_overflow_idle_timer'))
+        self.assertFalse(hasattr(popup, '_outside_click_timer'))
+        popup.popup(QPoint(100, 100))
+        QApplication.processEvents()
+        self.assertTrue(popup.isVisible())
+        QTest.keyClick(popup, Qt.Key_Escape)
+        QApplication.processEvents()
+        self.assertFalse(popup.isVisible())
 
-        popup._pointer_button_down = True
-        self.assertFalse(
-            popup._should_dismiss_for_pointer(True, QPoint(-10, -10)))
+    def test_tray_controls_do_not_trigger_menu_action(self):
+        popup = TrayMenuPopup('zh')
+        popup.popup(QPoint(100, 100))
+        QApplication.processEvents()
+        popup.feedback_switch.click()
+        QApplication.processEvents()
+        self.assertTrue(popup.isVisible())
+        popup.close()
+
+    def test_system_tray_uses_manual_nonactivating_context_path(self):
+        app = ClipboardFXApp.__new__(ClipboardFXApp)
+        app._language = 'zh'
+        app.silent_mode = False
+        app._holding_mode = False
+        app._setup_tray()
+        self.assertIsNone(app.tray.contextMenu())
+        if sys.platform.startswith('win'):
+            self.assertIsInstance(app.tray_menu, WindowsNativeTrayMenu)
+        app.tray_menu.close()
+        app.tray.deleteLater()
+
+    def test_windows_native_menu_factory_and_commands(self):
+        menu = create_tray_menu('zh')
+        if not sys.platform.startswith('win'):
+            self.assertIsInstance(menu, TrayMenuPopup)
+            return
+        self.assertIsInstance(menu, WindowsNativeTrayMenu)
+        feedback = []
+        holding = []
+        languages = []
+        quitting = []
+        menu.feedback_toggled.connect(feedback.append)
+        menu.holding_toggled.connect(holding.append)
+        menu.language_toggled.connect(languages.append)
+        menu.quit_requested.connect(lambda: quitting.append(True))
+        menu._apply_command(ID_FEEDBACK)
+        menu._apply_command(ID_HOLDING)
+        menu._apply_command(ID_LANGUAGE)
+        menu._apply_command(ID_QUIT)
+        self.assertEqual(feedback, [False])
+        self.assertEqual(holding, [True])
+        self.assertEqual(languages, ['en'])
+        self.assertEqual(quitting, [True])
+        menu.close()
+
+    def test_context_and_left_click_open_the_same_menu(self):
+        class Menu:
+            def __init__(self):
+                self.shown = 0
+
+            def isVisible(self):
+                return False
+
+            def show_near_tray(self, tray):
+                self.shown += 1
+
+        app = ClipboardFXApp.__new__(ClipboardFXApp)
+        app.tray = object()
+        app.tray_menu = Menu()
+        app._on_tray_activated(QSystemTrayIcon.ActivationReason.Context)
+        app._on_tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        self.assertEqual(app.tray_menu.shown, 2)
 
     def test_copy_full_exit_keeps_the_two_pixel_line_phase(self):
         original = ANIMATION_DURATION.copy()
@@ -176,7 +268,7 @@ class TrayAndHoldingTests(unittest.TestCase):
         self.assertEqual(len(widget._main_image_cache.reveal_frames), 25)
         self.assertEqual(len(widget._stack_thumbnail_cache), 2)
 
-    def test_idle_animation_clock_and_mouse_tracker_have_no_background_timer(self):
+    def test_animation_and_motion_clocks_stop_while_idle(self):
         engine = PropertyEngine()
         self.assertFalse(engine._timer.isActive())
         engine.set_frame_active('test', True)
@@ -185,8 +277,24 @@ class TrayAndHoldingTests(unittest.TestCase):
         self.assertFalse(engine._timer.isActive())
 
         tracker = MouseTracker()
-        self.assertFalse(hasattr(tracker, 'poll_timer'))
-        self.assertFalse(hasattr(tracker, 'update_timer'))
+        self.assertEqual(tracker._motion_timer.interval(), 8)
+        self.assertFalse(tracker._motion_timer.isActive())
+        tracker.start_tracking()
+        self.assertTrue(tracker._motion_timer.isActive())
+        tracker.stop_tracking()
+        self.assertFalse(tracker._motion_timer.isActive())
+
+    def test_active_motion_clock_updates_faster_than_visual_clock(self):
+        tracker = MouseTracker()
+        ticks = []
+        tracker.spring_position_changed.connect(lambda *_: ticks.append(True))
+        tracker.start_tracking()
+        QTimer.singleShot(120, self.app.quit)
+        self.app.exec()
+        tracker.stop_tracking()
+        # Allow scheduling headroom on a busy test host while still proving
+        # this is materially faster than the 16ms visual animation timer.
+        self.assertGreaterEqual(len(ticks), 9)
 
     def test_script_aware_style_uses_ui_font_without_cjk_tracking(self):
         chinese = TextStyleResolver.resolve('复制中文测试')

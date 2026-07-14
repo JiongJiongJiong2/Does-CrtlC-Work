@@ -16,7 +16,8 @@ class StackLayer:
     @staticmethod
     def paint(painter: QPainter, base_x: float, base_y: float,
               base_size: int, layer_idx: int, progress: float,
-              images: list, thumbnail: QPixmap = None) -> None:
+              images: list, thumbnail: QPixmap = None, direction: int = 1,
+              vertical_direction: int = 1) -> None:
         """绘制一个堆叠背景层
 
         Args:
@@ -32,9 +33,10 @@ class StackLayer:
             return
 
         cfg = IMAGE_STACK
-        offset_x = cfg['offset_x'] * (layer_idx + 1) * progress
-        offset_y = cfg['offset_y'] * (layer_idx + 1) * progress
-        rotate = cfg['rotate_per_layer'] * (layer_idx + 1) * progress
+        offset_x = cfg['offset_x'] * direction * (layer_idx + 1) * progress
+        offset_y = (cfg['offset_y'] * vertical_direction *
+                    (layer_idx + 1) * progress)
+        rotate = cfg['rotate_per_layer'] * direction * (layer_idx + 1) * progress
 
         if layer_idx == 0:
             opacity = cfg['opacity_layer1'] * progress
@@ -48,14 +50,17 @@ class StackLayer:
         painter.save()
         painter.setOpacity(opacity)
 
-        # 旋转：以主图右下角为圆心
+        # Mirror the stack direction and rotate around its outer lower corner.
         transform = QTransform()
-        pivot_x = base_x + base_size
-        pivot_y = base_y + base_size
+        pivot_x = base_x + (base_size if direction >= 0 else 0)
+        pivot_y = base_y if vertical_direction < 0 else base_y + base_size
         transform.translate(pivot_x, pivot_y)
         transform.rotate(rotate)
         transform.translate(-pivot_x, -pivot_y)
-        painter.setTransform(transform)
+        # Preserve FeedbackWidget's outer cursor-size scale. Replacing the
+        # transform here would leave stack layers at 1x while every other
+        # component is enlarged.
+        painter.setTransform(transform, combine=True)
 
         # 背景
         bg = cfg['bg_color']

@@ -1,9 +1,8 @@
-"""Small, DPI-aware custom tray popup for Dose Ctrl+C."""
+"""Compact native-lifecycle tray menu for Dose Ctrl+C."""
 
-import ctypes
 import sys
 
-from PySide6.QtCore import Qt, Signal, QSize, QEvent, QPoint, QTimer
+from PySide6.QtCore import Qt, Signal, QSize, QPoint
 from PySide6.QtGui import QColor, QCursor, QPainter
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -11,10 +10,13 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
+
 
 class ToggleSwitch(QAbstractButton):
     """A compact Apple-like toggle; Qt scales its logical size for Windows DPI."""
@@ -40,12 +42,20 @@ class ToggleSwitch(QAbstractButton):
         painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
 
         thumb_size = rect.height() - 2
-        thumb_x = rect.right() - thumb_size - 1 if self.isChecked() else rect.left() + 1
-        painter.setBrush(QColor('#f7f7f7') if self.isEnabled() else QColor('#b0b0b0'))
+        thumb_x = (rect.right() - thumb_size - 1
+                   if self.isChecked() else rect.left() + 1)
+        painter.setBrush(
+            QColor('#f7f7f7') if self.isEnabled() else QColor('#b0b0b0'))
         painter.drawEllipse(thumb_x, rect.top() + 1, thumb_size, thumb_size)
 
-class TrayMenuPopup(QWidget):
-    """Frameless popup used instead of the unstyleable native tray QMenu."""
+
+class TrayMenuPopup(QMenu):
+    """A standard QMenu lifecycle containing the existing custom panel.
+
+    QMenu owns outside-click, focus-loss and Escape dismissal. The complete
+    visual surface remains a QWidgetAction so the compact rounded layout does
+    not change with the platform menu-item style.
+    """
 
     feedback_toggled = Signal(bool)
     holding_toggled = Signal(bool)
@@ -56,7 +66,7 @@ class TrayMenuPopup(QWidget):
         'zh': {
             'feedback': '显示复制反馈',
             'holding': '等待 Ctrl+V 后收起',
-            'quit': '退出 Does Ctrl+C Work',
+            'quit': '退出',
         },
         'en': {
             'feedback': 'Show copy feedback',
@@ -66,31 +76,27 @@ class TrayMenuPopup(QWidget):
     }
 
     def __init__(self, language='zh', parent=None):
-        super().__init__(parent, Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        super().__init__(parent)
+        self.setObjectName('trayMenu')
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setObjectName('trayPopup')
+        if sys.platform.startswith('win'):
+            # Keep Explorer's hidden-icons flyout active behind this popup.
+            # QMenu still owns its normal popup mouse grab and dismissal.
+            self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setWindowFlag(Qt.FramelessWindowHint, True)
+        self.setWindowFlag(Qt.NoDropShadowWindowHint, True)
+        self.setContentsMargins(0, 0, 0, 0)
         self._language = language if language in self._TEXT else 'zh'
         self._build_ui()
         self.set_language(self._language)
-        self.installEventFilter(self)
-        self._application = QApplication.instance()
-        self._application.installEventFilter(self)
-        self._pointer_button_down = False
-        self._outside_click_timer = QTimer(self)
-        self._outside_click_timer.setInterval(40)
-        self._outside_click_timer.timeout.connect(self._dismiss_after_external_click)
 
     def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-
-        self.panel = QFrame(self)
+        self.panel = QFrame()
         self.panel.setObjectName('trayPanel')
         self.panel.setFixedWidth(210)
-        root.addWidget(self.panel)
         layout = QVBoxLayout(self.panel)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(2)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(1)
 
         header = QHBoxLayout()
         title = QLabel('Does Ctrl+C Work', self.panel)
@@ -108,7 +114,9 @@ class TrayMenuPopup(QWidget):
         self.btn_en.clicked.connect(lambda: self._set_lang_and_emit('en'))
 
         slash = QLabel('/', self.panel)
-        slash.setStyleSheet('color: rgba(142, 142, 142, 0.3); font-size: 8.5px; font-family: monospace;')
+        slash.setStyleSheet(
+            'color: rgba(142, 142, 142, 0.3); font-size: 8.5px; '
+            'font-family: monospace;')
 
         self.btn_zh = QPushButton('中', self.panel)
         self.btn_zh.setCursor(Qt.PointingHandCursor)
@@ -135,24 +143,33 @@ class TrayMenuPopup(QWidget):
         self.quit_button = QPushButton(self.panel)
         self.quit_button.setObjectName('quitButton')
         self.quit_button.setCursor(Qt.PointingHandCursor)
-        self.quit_button.clicked.connect(self.quit_requested)
+        self.quit_button.clicked.connect(self._request_quit)
         layout.addWidget(self.quit_button)
 
+        # One widget action preserves the previous panel pixel-for-pixel while
+        # the surrounding QMenu supplies the platform popup lifecycle.
+        self._panel_action = QWidgetAction(self)
+        self._panel_action.setDefaultWidget(self.panel)
+        self.addAction(self._panel_action)
+
         self.setStyleSheet('''
-            #trayPanel { background: #252525; border: 1px solid #414141; border-radius: 8px; }
+            QMenu#trayMenu { background: transparent; border: 0; padding: 0; }
+            #trayPanel { background: #252525; border: 1px solid #414141;
+                         border-radius: 10px; }
             #trayTitle { color: #f2f2f2; font-size: 11px; font-weight: 600; }
             #trayLabel { color: #ececec; font-size: 11px; }
             #trayShortcut { color: #929292; font-size: 8px; }
-            #trayDivider { color: #414141; margin: 2px 0; }
-            #quitButton { color: #ececec; background: transparent; border: 0; border-radius: 5px;
-                          min-height: 24px; font-size: 11px; text-align: left; padding-left: 6px; }
+            #trayDivider { color: #414141; margin: 1px 0; }
+            #quitButton { color: #ececec; background: transparent; border: 0;
+                          border-radius: 5px; min-height: 22px; font-size: 11px;
+                          text-align: left; padding-left: 6px; }
             #quitButton:hover { background: #3a3a3a; }
         ''')
 
     def _add_switch_row(self, layout):
         row = QWidget(self.panel)
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(4, 2, 2, 2)
+        row_layout.setContentsMargins(4, 1, 2, 1)
         row_layout.setSpacing(6)
         label = QLabel(row)
         label.setObjectName('trayLabel')
@@ -166,6 +183,10 @@ class TrayMenuPopup(QWidget):
         layout.addWidget(row)
         return label, switch, shortcut
 
+    def _request_quit(self):
+        self.close()
+        self.quit_requested.emit()
+
     def _set_lang_and_emit(self, lang):
         if self._language != lang:
             self.set_language(lang)
@@ -178,21 +199,27 @@ class TrayMenuPopup(QWidget):
         self.holding_label.setText(text['holding'])
         self.feedback_label.setToolTip('Ctrl+Shift+M')
         self.holding_label.setToolTip('Ctrl+Shift+H')
-        # Full shortcut strings make this intentionally compact popup much
-        # wider on Windows. They remain documented in README and tooltips.
         self.feedback_shortcut.clear()
         self.holding_shortcut.clear()
         self.quit_button.setText(text['quit'])
 
-        # Style language buttons based on selection
         if self._language == 'en':
-            self.btn_en.setStyleSheet('color: #ffffff; font-size: 10px; font-weight: bold; background: transparent; border: 0; padding: 0;')
-            self.btn_zh.setStyleSheet('color: #8e8e8e; font-size: 8.5px; font-weight: normal; background: transparent; border: 0; padding: 0;')
+            self.btn_en.setStyleSheet(
+                'color: #ffffff; font-size: 10px; font-weight: bold; '
+                'background: transparent; border: 0; padding: 0;')
+            self.btn_zh.setStyleSheet(
+                'color: #8e8e8e; font-size: 8.5px; font-weight: normal; '
+                'background: transparent; border: 0; padding: 0;')
         else:
-            self.btn_en.setStyleSheet('color: #8e8e8e; font-size: 8.5px; font-weight: normal; background: transparent; border: 0; padding: 0;')
-            self.btn_zh.setStyleSheet('color: #ffffff; font-size: 10px; font-weight: bold; background: transparent; border: 0; padding: 0;')
+            self.btn_en.setStyleSheet(
+                'color: #8e8e8e; font-size: 8.5px; font-weight: normal; '
+                'background: transparent; border: 0; padding: 0;')
+            self.btn_zh.setStyleSheet(
+                'color: #ffffff; font-size: 10px; font-weight: bold; '
+                'background: transparent; border: 0; padding: 0;')
 
         self.setToolTip('English' if self._language == 'zh' else '中文')
+        self.adjustSize()
 
     def set_state(self, feedback_enabled, holding_enabled):
         for switch, checked in ((self.feedback_switch, feedback_enabled),
@@ -201,64 +228,37 @@ class TrayMenuPopup(QWidget):
             switch.setChecked(checked)
             switch.blockSignals(False)
 
-    def eventFilter(self, obj, event):
-        """Close when either Qt or the whole application loses activation."""
-        if (obj is self and event.type() == QEvent.Type.WindowDeactivate) or (
-                obj is self._application and event.type() == QEvent.Type.ApplicationDeactivate):
-            self.hide()
-        return super().eventFilter(obj, event)
-
-    @staticmethod
-    def _is_windows_pointer_button_down() -> bool:
-        """Read mouse buttons only while this popup is visible on Windows."""
-        if not sys.platform.startswith('win'):
-            return False
-        try:
-            user32 = ctypes.windll.user32
-            return any(user32.GetAsyncKeyState(button) & 0x8000
-                       for button in (0x01, 0x02, 0x04))
-        except (AttributeError, OSError):
-            return False
-
-    def _should_dismiss_for_pointer(self, pointer_down: bool, global_pos: QPoint) -> bool:
-        """Dismiss only on the new outside click, never merely on pointer movement."""
-        return (pointer_down and not self._pointer_button_down and
-                not self.rect().contains(self.mapFromGlobal(global_pos)))
-
-    def _dismiss_after_external_click(self):
-        pointer_down = self._is_windows_pointer_button_down()
-        if self._should_dismiss_for_pointer(pointer_down, QCursor.pos()):
-            self.hide()
-        self._pointer_button_down = pointer_down
-
-    def hideEvent(self, event):
-        self._outside_click_timer.stop()
-        self._pointer_button_down = False
-        super().hideEvent(event)
-
     def show_near_tray(self, tray_icon):
-        self.adjustSize()
-        screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+        """Show left-click menu at the same tray-relative anchor as before."""
+        self.ensurePolished()
+        menu_size = self.sizeHint()
+        screen = (QApplication.screenAt(QCursor.pos()) or
+                  QApplication.primaryScreen())
         available = screen.availableGeometry()
-
-        # Prefer the tray icon's screen position over cursor
         icon_geo = tray_icon.geometry()
         if icon_geo.isValid() and icon_geo.width() > 0:
             anchor_x = icon_geo.right() + 1
             anchor_y = icon_geo.top() - 1
         else:
-            anchor_x = QCursor.pos().x()
-            anchor_y = QCursor.pos().y()
+            cursor = QCursor.pos()
+            anchor_x = cursor.x()
+            anchor_y = cursor.y()
 
-        x = anchor_x - self.width()
-        y = anchor_y - self.height()
+        x = anchor_x - menu_size.width()
+        y = anchor_y - menu_size.height()
+        x = max(available.left() + 6,
+                min(x, available.right() - menu_size.width() - 6))
+        y = max(available.top() + 6,
+                min(y, available.bottom() - menu_size.height() - 6))
+        self.popup(QPoint(x, y))
 
-        # Keep inside available screen area
-        x = max(available.left() + 6, min(x, available.right() - self.width() - 6))
-        y = max(available.top() + 6, min(y, available.bottom() - self.height() - 6))
 
-        self.move(x, y)
-        self.show()
-        self.raise_()
-        self._pointer_button_down = self._is_windows_pointer_button_down()
-        self._outside_click_timer.start()
+def create_tray_menu(language='zh', parent=None):
+    """Use a real HMENU loop on Windows; retain the Qt menu elsewhere."""
+    if sys.platform.startswith('win'):
+        try:
+            from ui.windows_tray_menu import WindowsNativeTrayMenu
+            return WindowsNativeTrayMenu(language, parent)
+        except (AttributeError, OSError, TypeError):
+            pass
+    return TrayMenuPopup(language, parent)

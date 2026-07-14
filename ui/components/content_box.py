@@ -12,10 +12,12 @@ class ContentBox:
     def paint(painter: QPainter, dot_cx: float, dot_cy: float,
               box_width: float, box_height: float, box_opacity: float,
               display_text: str, dot_scale: float, text_style: TextStyle,
-              final_layout: QStaticText = None) -> None:
+              final_layout: QStaticText = None, direction: int = 1) -> None:
         if box_width <= 0:
             return
-        box_x, box_y = dot_cx, dot_cy
+        mirrored = direction < 0
+        box_x = dot_cx - box_width if mirrored else dot_cx
+        box_y = dot_cy
         dot_radius = SIZES['dot_radius']
         if box_opacity > 0:
             line_top = dot_cy + (dot_radius * dot_scale) if dot_scale > 0 else dot_cy + dot_radius
@@ -24,7 +26,9 @@ class ContentBox:
 
         painter.save()
         painter.setCompositionMode(QPainter.CompositionMode_DestinationOver)
-        gradient = QLinearGradient(box_x, box_y, box_x + box_width, box_y)
+        gradient = QLinearGradient(
+            box_x + box_width if mirrored else box_x, box_y,
+            box_x if mirrored else box_x + box_width, box_y)
         gradient.setColorAt(0, QColor(0, 0, 0, int(217 * box_opacity)))
         gradient.setColorAt(0.8, QColor(0, 0, 0, int(217 * box_opacity)))
         gradient.setColorAt(1, QColor(0, 0, 0, 0))
@@ -34,13 +38,21 @@ class ContentBox:
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
         if box_opacity > 0:
             painter.setPen(QPen(QColor(COLORS['border']), 2))
-            painter.drawLine(int(box_x), int(box_y), int(box_x), int(box_y + box_height))
+            # In mirrored mode the box grows left, but the vertical yellow
+            # anchor must stay under the dot on the right.
+            painter.drawLine(int(dot_cx), int(box_y),
+                             int(dot_cx), int(box_y + box_height))
         painter.restore()
 
         if display_text and box_width > 20:
             painter.setPen(QColor(COLORS['text']))
             painter.setFont(text_style.font)
-            text_x = box_x + 10
+            if mirrored:
+                text_width = (final_layout.size().width() if final_layout is not None
+                              else text_style.metrics.horizontalAdvance(display_text))
+                text_x = max(box_x + 8, box_x + box_width - 10 - text_width)
+            else:
+                text_x = box_x + 10
             text_top = box_y + (box_height - text_style.metrics.height()) / 2
             painter.save()
             painter.setClipRect(int(box_x + 8), int(box_y),
