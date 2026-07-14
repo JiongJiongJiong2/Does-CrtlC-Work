@@ -138,3 +138,11 @@
   - 新增 `ui/tray_menu.py`：以 `Qt.Popup` 替代无法稳定自定义的原生 `QMenu`，提供圆角深灰面板、黄色 Apple 风格开关、`EN`/`中` 小标识和本地化按钮文本。
   - README 补充 Ctrl+Shift+H，并把 Holding 改为准确的“Ctrl+V 意图”语义。
   - 新增 Holding/托盘回归测试；完整离屏套件 18/18、`compileall` 和 `git diff --check` 通过。真实 Windows 托盘位置、右键激活与 DPI 视觉仍需手动验收。
+
+### Phase 13: 托盘隐藏图标页收起联动
+- **Status:** complete (待真实 Windows 隐藏图标页手动验收)
+- Actions taken:
+  - 用户反馈：Windows 右下角隐藏图标页收起后，自绘托盘面板仍停留在原位置。
+  - 确认仅监听 popup 自身 `WindowDeactivate` 无法可靠获知 Explorer 溢出页关闭；新增 QApplication 级 deactivation 收起。
+  - 在弹层显示期间启动 40ms 定时器，以 Windows 鼠标按键的按下沿判断面板外点击；点击任务栏、隐藏图标箭头或其它外部位置导致溢出页收起时，面板会立即隐藏。`hideEvent` 停止计时器，空闲期没有轮询。
+  - 新增外部点击边沿测试，并更新旧语言控件断言以匹配 EN/中双标识；离屏完整测试 19/19、`compileall` 与 `git diff --check` 均通过。

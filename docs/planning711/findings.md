@@ -78,6 +78,8 @@
 - Phase 11 v3 结果：代码不 import QtNetwork，网络图片下载使用 Python 标准库 `urllib`；因此在 v2 上排除 `Qt6Network.dll` 与 `QtNetwork.pyd`。产物为 27,163,975 bytes（25.91 MiB），相对基线减少 19.84 MiB（43.4%），再比 v2 减少 1.07 MiB。归档未包含 QtNetwork 或此前排除项，15/15 离屏测试和 4 秒冻结启动 smoke test 通过；真实桌面验收仍是发布门槛。
 - Phase 12 审查：`main._on_paste()` 对任意活动反馈调用 `start_exit()`，尽管注释只说 holding；普通复制后 Ctrl+V 因而没有绿色 paste 提示。Holding 由全局快捷键 Ctrl+V 结束，语义只能是“检测到 Ctrl+V 意图”而不是系统级“粘贴成功”。原托盘使用原生 `QMenu`、灰色状态行和命令式“切换”动作，既没有可见 checked 状态，也无法可靠实现圆角深灰/黄色开关视觉；需要改为自绘 `Qt.Popup` 并使用持久化状态。
 - Phase 12 实施：新增 `ui/tray_menu.py` 的无边框 `Qt.Popup`，用逻辑像素与应用默认字体跟随 Windows DPI；面板为紧凑圆角深灰，含黄色 Apple 风格开关以及 `EN`/`中` 语言标识。`QSettings` 保存 feedback、holding、language 三个状态。`FeedbackWidget.is_holding_copy` 把 Ctrl+V 退场限定到 Holding COPY，普通提示则改为绿色 PASTE。离屏 18/18 测试通过；真实 Windows 仍需确认托盘右键激活、位置、多显示器和 100/125/150% DPI 观感。
+- Phase 13 发现：Windows 的隐藏图标溢出页由 Explorer 进程管理；它收起时，不保证向应用的 `Qt.Popup` 发送 `WindowDeactivate`，因此只在 popup 本身安装 event filter 会留下悬浮面板。应监听应用级 deactivation，并在 popup 可见期间以低频、边沿触发方式识别 Windows 鼠标在面板外的点击；这样不会引入常驻轮询，也能覆盖点击任务栏/隐藏图标箭头导致的溢出页收起。
+- Phase 13 实施：`TrayMenuPopup` 同时监听自身与 QApplication 的 deactivation；显示时启动 40ms 的可见期定时器，借助 Windows `GetAsyncKeyState` 只在新的左/右/中键按下沿且指针位于面板外时隐藏。`hideEvent` 立即停止计时器，因此没有后台常驻轮询。新增测试覆盖面板外按下沿会收起、持续按住不会重复判定；离屏完整套件 19/19、`compileall` 与 `git diff --check` 通过。Explorer 的实际溢出页行为仍须在 Windows 任务栏人工验证。
 
 ## Technical Decisions
 | Decision | Rationale |

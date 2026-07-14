@@ -4,7 +4,7 @@
 基于当前未暂存改动、历史实现与 TMP 动画原型，明确动画退化原因、核心剪贴板逻辑问题，以及 Python/C#/C++ 的合理演进路线，并给出可执行的优先级计划。
 
 ## Current Phase
-Phase 12 (Holding semantics and custom tray controls in progress)
+Phase 13 (Tray overflow dismissal lifecycle complete; Windows desktop verification pending)
 
 ## Phases
 
@@ -95,6 +95,13 @@ Phase 12 (Holding semantics and custom tray controls in progress)
 - [x] 运行离屏交互测试、静态检查；真实 Windows 托盘位置与视觉/DPI 验收另列
 - **Status:** complete (真实 Windows 视觉/DPI 验收待发布前执行)
 
+### Phase 13: 托盘隐藏图标页收起联动
+- [x] 确认 `Qt.Popup` 仅监听自身 `WindowDeactivate`，无法稳定得知 Explorer 管理的隐藏图标页已收起
+- [x] 增加应用级失活收起，以及仅在弹层可见期间运行的 Windows 外部点击检测
+- [x] 为外部点击的按下沿判定增加离屏测试
+- [x] 更新计划、发现和进度，并保留真实 Windows 隐藏图标页验收项
+- **Status:** complete (待真实 Windows 隐藏图标页手动验收)
+
 ## Key Questions
 1. TMP 原型与当前动画在状态机、帧时序、缓动、合成方式上分别差在哪里？
 2. 当前实现检测的是 Ctrl+C 按键、选中文本，还是系统剪贴板实际变化？
@@ -128,6 +135,7 @@ Phase 12 (Holding semantics and custom tray controls in progress)
 | Phase 11 用 `git check-ignore -v` 验证 spec 白名单时误读否定规则输出 | 1 | 改用普通 `git check-ignore -q` 与 `git status`，确认 spec 未被忽略 |
 | Phase 11 使用了不存在的 `pyi-archive_view` 入口，并尝试通过模块入口调用 | 1 | 改用已安装的 `pyi-archive_viewer.exe`；v3 归档确认不含 QtNetwork、QML/Quick/PDF 或软件 OpenGL。 |
 | Phase 12 在两个开关行显示完整快捷键后，离屏面板宽度达到 350px | 1 | 移除弹窗中的冗长快捷键文本，保留 README 中的快捷键说明，使紧凑面板宽度回到 280px 以内。 |
+| Phase 13 首次最终检查发现 `ui/tray_menu.py` 两处尾随空格 | 1 | 移除空白行尾空格后重新执行 `git diff --check`。 |
 
 ## Notes
 - 只创建本次审查所需的规划文档，不修改产品代码。

@@ -1,6 +1,9 @@
 """Small, DPI-aware custom tray popup for Dose Ctrl+C."""
 
-from PySide6.QtCore import Qt, Signal, QSize
+import ctypes
+import sys
+
+from PySide6.QtCore import Qt, Signal, QSize, QEvent, QPoint, QTimer
 from PySide6.QtGui import QColor, QCursor, QPainter
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -13,7 +16,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-
 class ToggleSwitch(QAbstractButton):
     """A compact Apple-like toggle; Qt scales its logical size for Windows DPI."""
 
@@ -24,7 +26,7 @@ class ToggleSwitch(QAbstractButton):
         self.setFixedSize(self.sizeHint())
 
     def sizeHint(self):
-        return QSize(38, 22)
+        return QSize(28, 16)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -37,11 +39,10 @@ class ToggleSwitch(QAbstractButton):
         painter.setBrush(track)
         painter.drawRoundedRect(rect, rect.height() / 2, rect.height() / 2)
 
-        thumb_size = rect.height() - 4
-        thumb_x = rect.right() - thumb_size - 2 if self.isChecked() else rect.left() + 2
+        thumb_size = rect.height() - 2
+        thumb_x = rect.right() - thumb_size - 1 if self.isChecked() else rect.left() + 1
         painter.setBrush(QColor('#f7f7f7') if self.isEnabled() else QColor('#b0b0b0'))
-        painter.drawEllipse(thumb_x, rect.top() + 2, thumb_size, thumb_size)
-
+        painter.drawEllipse(thumb_x, rect.top() + 1, thumb_size, thumb_size)
 
 class TrayMenuPopup(QWidget):
     """Frameless popup used instead of the unstyleable native tray QMenu."""
@@ -55,12 +56,12 @@ class TrayMenuPopup(QWidget):
         'zh': {
             'feedback': '显示复制反馈',
             'holding': '等待 Ctrl+V 后收起',
-            'quit': '退出 Dose Ctrl+C',
+            'quit': '退出 Does Ctrl+C Work',
         },
         'en': {
             'feedback': 'Show copy feedback',
             'holding': 'Dismiss on Ctrl+V',
-            'quit': 'Quit Dose Ctrl+C',
+            'quit': 'Quit',
         },
     }
 
@@ -71,6 +72,13 @@ class TrayMenuPopup(QWidget):
         self._language = language if language in self._TEXT else 'zh'
         self._build_ui()
         self.set_language(self._language)
+        self.installEventFilter(self)
+        self._application = QApplication.instance()
+        self._application.installEventFilter(self)
+        self._pointer_button_down = False
+        self._outside_click_timer = QTimer(self)
+        self._outside_click_timer.setInterval(40)
+        self._outside_click_timer.timeout.connect(self._dismiss_after_external_click)
 
     def _build_ui(self):
         root = QVBoxLayout(self)
@@ -78,21 +86,38 @@ class TrayMenuPopup(QWidget):
 
         self.panel = QFrame(self)
         self.panel.setObjectName('trayPanel')
+        self.panel.setFixedWidth(210)
         root.addWidget(self.panel)
         layout = QVBoxLayout(self.panel)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(4)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(2)
 
         header = QHBoxLayout()
-        title = QLabel('Dose Ctrl+C', self.panel)
+        title = QLabel('Does Ctrl+C Work', self.panel)
         title.setObjectName('trayTitle')
         header.addWidget(title)
         header.addStretch(1)
-        self.language_button = QPushButton(self.panel)
-        self.language_button.setObjectName('languageButton')
-        self.language_button.setFixedSize(32, 22)
-        self.language_button.clicked.connect(self._toggle_language)
-        header.addWidget(self.language_button)
+
+        self.lang_container = QWidget(self.panel)
+        lang_layout = QHBoxLayout(self.lang_container)
+        lang_layout.setContentsMargins(0, 0, 0, 0)
+        lang_layout.setSpacing(3)
+
+        self.btn_en = QPushButton('EN', self.panel)
+        self.btn_en.setCursor(Qt.PointingHandCursor)
+        self.btn_en.clicked.connect(lambda: self._set_lang_and_emit('en'))
+
+        slash = QLabel('/', self.panel)
+        slash.setStyleSheet('color: rgba(142, 142, 142, 0.3); font-size: 8.5px; font-family: monospace;')
+
+        self.btn_zh = QPushButton('中', self.panel)
+        self.btn_zh.setCursor(Qt.PointingHandCursor)
+        self.btn_zh.clicked.connect(lambda: self._set_lang_and_emit('zh'))
+
+        lang_layout.addWidget(self.btn_en)
+        lang_layout.addWidget(slash)
+        lang_layout.addWidget(self.btn_zh)
+        header.addWidget(self.lang_container)
         layout.addLayout(header)
 
         (self.feedback_label, self.feedback_switch,
@@ -114,16 +139,13 @@ class TrayMenuPopup(QWidget):
         layout.addWidget(self.quit_button)
 
         self.setStyleSheet('''
-            #trayPanel { background: #252525; border: 1px solid #414141; border-radius: 12px; }
-            #trayTitle { color: #f2f2f2; font-weight: 600; }
-            #languageButton { color: #facc15; background: #333333; border: 1px solid #4a4a4a;
-                              border-radius: 8px; font-weight: 700; padding: 0; }
-            #languageButton:hover { background: #3d3d3d; }
-            #trayLabel { color: #ececec; }
-            #trayShortcut { color: #929292; font-size: 9px; }
-            #trayDivider { color: #414141; margin: 4px 0; }
-            #quitButton { color: #ececec; background: transparent; border: 0; border-radius: 7px;
-                          min-height: 28px; text-align: left; padding-left: 8px; }
+            #trayPanel { background: #252525; border: 1px solid #414141; border-radius: 8px; }
+            #trayTitle { color: #f2f2f2; font-size: 11px; font-weight: 600; }
+            #trayLabel { color: #ececec; font-size: 11px; }
+            #trayShortcut { color: #929292; font-size: 8px; }
+            #trayDivider { color: #414141; margin: 2px 0; }
+            #quitButton { color: #ececec; background: transparent; border: 0; border-radius: 5px;
+                          min-height: 24px; font-size: 11px; text-align: left; padding-left: 6px; }
             #quitButton:hover { background: #3a3a3a; }
         ''')
 
@@ -131,7 +153,7 @@ class TrayMenuPopup(QWidget):
         row = QWidget(self.panel)
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(4, 2, 2, 2)
-        row_layout.setSpacing(8)
+        row_layout.setSpacing(6)
         label = QLabel(row)
         label.setObjectName('trayLabel')
         shortcut = QLabel(row)
@@ -144,9 +166,10 @@ class TrayMenuPopup(QWidget):
         layout.addWidget(row)
         return label, switch, shortcut
 
-    def _toggle_language(self):
-        self.set_language('en' if self._language == 'zh' else 'zh')
-        self.language_toggled.emit(self._language)
+    def _set_lang_and_emit(self, lang):
+        if self._language != lang:
+            self.set_language(lang)
+            self.language_toggled.emit(lang)
 
     def set_language(self, language):
         self._language = language if language in self._TEXT else 'zh'
@@ -160,7 +183,15 @@ class TrayMenuPopup(QWidget):
         self.feedback_shortcut.clear()
         self.holding_shortcut.clear()
         self.quit_button.setText(text['quit'])
-        self.language_button.setText('EN' if self._language == 'zh' else '中')
+
+        # Style language buttons based on selection
+        if self._language == 'en':
+            self.btn_en.setStyleSheet('color: #ffffff; font-size: 10px; font-weight: bold; background: transparent; border: 0; padding: 0;')
+            self.btn_zh.setStyleSheet('color: #8e8e8e; font-size: 8.5px; font-weight: normal; background: transparent; border: 0; padding: 0;')
+        else:
+            self.btn_en.setStyleSheet('color: #8e8e8e; font-size: 8.5px; font-weight: normal; background: transparent; border: 0; padding: 0;')
+            self.btn_zh.setStyleSheet('color: #ffffff; font-size: 10px; font-weight: bold; background: transparent; border: 0; padding: 0;')
+
         self.setToolTip('English' if self._language == 'zh' else '中文')
 
     def set_state(self, feedback_enabled, holding_enabled):
@@ -170,16 +201,64 @@ class TrayMenuPopup(QWidget):
             switch.setChecked(checked)
             switch.blockSignals(False)
 
-    def show_near_cursor(self):
+    def eventFilter(self, obj, event):
+        """Close when either Qt or the whole application loses activation."""
+        if (obj is self and event.type() == QEvent.Type.WindowDeactivate) or (
+                obj is self._application and event.type() == QEvent.Type.ApplicationDeactivate):
+            self.hide()
+        return super().eventFilter(obj, event)
+
+    @staticmethod
+    def _is_windows_pointer_button_down() -> bool:
+        """Read mouse buttons only while this popup is visible on Windows."""
+        if not sys.platform.startswith('win'):
+            return False
+        try:
+            user32 = ctypes.windll.user32
+            return any(user32.GetAsyncKeyState(button) & 0x8000
+                       for button in (0x01, 0x02, 0x04))
+        except (AttributeError, OSError):
+            return False
+
+    def _should_dismiss_for_pointer(self, pointer_down: bool, global_pos: QPoint) -> bool:
+        """Dismiss only on the new outside click, never merely on pointer movement."""
+        return (pointer_down and not self._pointer_button_down and
+                not self.rect().contains(self.mapFromGlobal(global_pos)))
+
+    def _dismiss_after_external_click(self):
+        pointer_down = self._is_windows_pointer_button_down()
+        if self._should_dismiss_for_pointer(pointer_down, QCursor.pos()):
+            self.hide()
+        self._pointer_button_down = pointer_down
+
+    def hideEvent(self, event):
+        self._outside_click_timer.stop()
+        self._pointer_button_down = False
+        super().hideEvent(event)
+
+    def show_near_tray(self, tray_icon):
         self.adjustSize()
         screen = QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
         available = screen.availableGeometry()
-        cursor = QCursor.pos()
-        x = max(available.left() + 6, min(cursor.x() - self.width() + 12,
-                                          available.right() - self.width() - 6))
-        y = cursor.y() - self.height() - 10
-        if y < available.top() + 6:
-            y = min(cursor.y() + 10, available.bottom() - self.height() - 6)
+
+        # Prefer the tray icon's screen position over cursor
+        icon_geo = tray_icon.geometry()
+        if icon_geo.isValid() and icon_geo.width() > 0:
+            anchor_x = icon_geo.right() + 1
+            anchor_y = icon_geo.top() - 1
+        else:
+            anchor_x = QCursor.pos().x()
+            anchor_y = QCursor.pos().y()
+
+        x = anchor_x - self.width()
+        y = anchor_y - self.height()
+
+        # Keep inside available screen area
+        x = max(available.left() + 6, min(x, available.right() - self.width() - 6))
+        y = max(available.top() + 6, min(y, available.bottom() - self.height() - 6))
+
         self.move(x, y)
         self.show()
         self.raise_()
+        self._pointer_button_down = self._is_windows_pointer_button_down()
+        self._outside_click_timer.start()

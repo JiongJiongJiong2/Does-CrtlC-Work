@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="clipboard_fx_icon_1780927283406.png" alt="Dose Ctrl+C Icon" width="128">
+  <img src="clipboard_fx_icon_1780927283406.png" alt="Does CtrlC Work Icon" width="128">
 </p>
 
 <h1 align="center">Does your Ctrl+C really work?</h1>

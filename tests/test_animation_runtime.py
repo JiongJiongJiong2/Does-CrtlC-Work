@@ -5,7 +5,7 @@ import unittest
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QPoint, QTimer
 from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
@@ -123,11 +123,26 @@ class TrayAndHoldingTests(unittest.TestCase):
         popup.set_state(feedback_enabled=True, holding_enabled=False)
         self.assertTrue(popup.feedback_switch.isChecked())
         self.assertFalse(popup.holding_switch.isChecked())
-        self.assertEqual(popup.language_button.text(), 'EN')
+        self.assertEqual(popup.btn_en.text(), 'EN')
+        self.assertEqual(popup.btn_zh.text(), '中')
         self.assertLessEqual(popup.sizeHint().width(), 280)
         popup.set_language('en')
-        self.assertEqual(popup.language_button.text(), '中')
         self.assertEqual(popup.holding_label.text(), 'Dismiss on Ctrl+V')
+
+    def test_tray_popup_dismisses_only_on_new_outside_click(self):
+        popup = TrayMenuPopup('zh')
+        popup.resize(210, 120)
+        popup.move(100, 100)
+        popup._pointer_button_down = False
+
+        self.assertFalse(
+            popup._should_dismiss_for_pointer(False, QPoint(0, 0)))
+        self.assertTrue(
+            popup._should_dismiss_for_pointer(True, QPoint(-10, -10)))
+
+        popup._pointer_button_down = True
+        self.assertFalse(
+            popup._should_dismiss_for_pointer(True, QPoint(-10, -10)))
 
     def test_copy_full_exit_keeps_the_two_pixel_line_phase(self):
         original = ANIMATION_DURATION.copy()

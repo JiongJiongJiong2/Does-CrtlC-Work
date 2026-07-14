@@ -1,5 +1,5 @@
 """
-Dose Ctrl+C - 剪贴板复制反馈动画工具
+Does CtrlC Work - 剪贴板复制反馈动画工具
 主入口文件 - 系统托盘 + 全局监听 + 动画管理
 """
 
@@ -22,8 +22,8 @@ class ClipboardFXApp:
     def __init__(self):
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)  # 关闭窗口不退出
-        self.app.setApplicationName("Dose Ctrl+C")
-        self.app.setApplicationDisplayName("Dose Ctrl+C")
+        self.app.setApplicationName("Does CtrlC Work")
+        self.app.setApplicationDisplayName("Does CtrlC Work")
         self._set_windows_app_id()
 
         self._settings = QSettings('DoseCtrlC', 'DoseCtrlC')
@@ -63,7 +63,7 @@ class ClipboardFXApp:
         icon = self._create_tray_icon()
         
         self.tray = QSystemTrayIcon(icon)
-        self.tray.setToolTip("Dose Ctrl+C - 剪贴板反馈")
+        self.tray.setToolTip("Does CtrlC Work - 剪贴板反馈")
         
         # Native tray QMenu cannot reliably provide the requested rounded,
         # dark control surface, so use a small DPI-aware Qt.Popup instead.
@@ -99,7 +99,7 @@ class ClipboardFXApp:
             if self.tray_menu.isVisible():
                 self.tray_menu.hide()
             else:
-                self.tray_menu.show_near_cursor()
+                self.tray_menu.show_near_tray(self.tray)
         
     def _on_mouse_move(self, x: float, y: float):
         """鼠标移动回调"""
@@ -203,7 +203,7 @@ class ClipboardFXApp:
         feedback_text = '开' if not self.silent_mode else '关'
         holding_text = '开' if self._holding_mode else '关'
         self.tray.setToolTip(
-            f'Dose Ctrl+C\n复制反馈：{feedback_text}\n等待 Ctrl+V：{holding_text}')
+            f'Does CtrlC Work\n复制反馈：{feedback_text}\n等待 Ctrl+V：{holding_text}')
         self.tray_menu.set_state(not self.silent_mode, self._holding_mode)
 
     def _set_language(self, language: str):
