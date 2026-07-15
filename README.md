@@ -20,7 +20,7 @@
 
 - **Copy Success (Text)** — Yellow indicator dot + expanding panel with scramble-text reveal.
 - **Copy Success (Image)** — 120×120 rounded thumbnail with pixel-style reveal animation.
-- **Multi-Image Layouts** — Choose the original three-image fan or a four-image horizontal cascade from the tray's icon-only selector; the selected mode is remembered.
+- **Multi-Image Layouts** — Choose the original three-image fan or a four-image horizontal cascade from the tray's compact text selector; the selected mode is remembered.
 - **Holding Mode** — Copy feedback stays on screen until `Ctrl+V` is detected or a timeout is reached. It represents a paste-key intent, not a system-wide guarantee that the target app accepted the paste.
 - **Parallel Image Loading** — Web images are downloaded concurrently (up to 3 threads), reducing wait time for multi-image clipboard content.
 - **Image Exit Animation** — Thumbnail shrinks toward the yellow indicator dot and disappears in sync with text collapse.
@@ -58,7 +58,7 @@
 | `Ctrl+Shift+M` | Toggle Silent Mode (visual feedback on/off) |
 | `Ctrl+Shift+H` | Toggle Holding Mode (dismiss a held copy on `Ctrl+V`) |
 | `Ctrl+Shift+Q` | Quit the application |
-| Tray image-layout selector | Switch future multi-image feedback between fan and horizontal cascade |
+| Tray image-layout selector (`Fan/Cascade`) | Switch future multi-image feedback between fan and horizontal cascade |
 | Right-click tray icon → Exit | Quit the application |
 
 ## Quick Start

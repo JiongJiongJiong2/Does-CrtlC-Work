@@ -178,3 +178,11 @@
 
 ## Visual/Browser Findings
 - 待检查本地原型资源后补充。
+
+### Phase 29 findings
+- native `TrackPopupMenuEx` 选择任何 command 都会结束当前弹出循环，当前代码只将语言和布局命令纳入重进条件，因此 feedback/holding 开关必然收起菜单；在保留 native Shell 菜单模式的前提下，最小修复是对开关也同步应用状态并在同一 HMENU/锚点重进。Windows 原生菜单的这次重进仍可能有极短重绘，但不会丢失菜单或状态上下文。
+- 模式选择器的两枚官方缩影在 64×24 DIP 区域里视觉差异不足、横向留白也不平衡；本轮改为 Qt 两个文字分段按钮（`Fan`/`Cascade`，中文为“扇形/层叠”），native owner-draw 保持同一行左右分段文字和黄色选中态，避免维护图标热区。
+- cascade 的有效步长改为默认 24 DIP，并以 `target_width` 为软上限：只有内容框足够宽时才扩展，避免长文字下图片组继续增长；图片本身 120 DIP，短文本无法容纳完整图片时保持最小 20 DIP 层差，不强行缩小图片。
+- cascade 绘制偏移将乘入已有 `_stack_progress`。该进度由 `spring_ease(stiffness=180,damping=14)` 驱动，因而初次展开会从重叠状态弹性展开，右侧 dock 的 per-layer 错峰只负责镜像方向，不另建动画时钟。
+- Phase 29 实现验证：`TPM_NOANIMATION` 与同 HMENU 重进组合可避免 Windows 原生菜单每次重新打开时播放系统开合动画；这解决了明显闪一下的问题，但由于 Win32 command 语义仍会结束一次 `TrackPopupMenuEx`，真实桌面仍需确认是否存在不可避免的单帧重绘。
+- 本轮新增的 PowerShell 分段读取脚本曾因数组边界类型混用报“参数类型不匹配”，没有改动产品文件；后续改用逐文件、逐范围读取完成审查。

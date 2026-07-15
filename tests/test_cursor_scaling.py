@@ -17,7 +17,7 @@ from ui.feedback_layout import (DOT_CX, bottom_dock_dot_y,
                                 clamp_window_position, dock_feedback_position,
                                 edge_dock_required, image_base_pos,
                                 visible_content_bounds, window_size)
-from ui.image_layout import cascade_layer_offset
+from ui.image_layout import cascade_layer_offset, cascade_step
 from ui.feedback_widget import FeedbackType, FeedbackWidget
 
 
@@ -119,9 +119,13 @@ class CursorMetricsTests(unittest.TestCase):
 
     def test_cascade_uses_four_horizontal_slots_and_reverses_at_right_dock(self):
         self.assertEqual(cascade_layer_offset(0, 4, 0.0), 0.0)
-        self.assertEqual(cascade_layer_offset(3, 4, 0.0), 60.0)
+        self.assertEqual(cascade_layer_offset(3, 4, 0.0), 72.0)
         self.assertEqual(cascade_layer_offset(0, 4, 1.0), 0.0)
-        self.assertEqual(cascade_layer_offset(3, 4, 1.0), -60.0)
+        self.assertEqual(cascade_layer_offset(3, 4, 1.0), -72.0)
+        self.assertEqual(cascade_layer_offset(3, 4, 0.0,
+                                              expansion_progress=0.0), 0.0)
+        self.assertEqual(cascade_step(180, 4), 20.0)
+        self.assertEqual(cascade_step(240, 4), 24.0)
         fan_right, _ = visible_content_bounds(120, True, image_count=3)
         cascade_right, _ = visible_content_bounds(
             120, True, image_count=4, image_layout_mode='cascade')

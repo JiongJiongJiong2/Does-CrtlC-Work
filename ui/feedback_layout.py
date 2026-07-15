@@ -7,7 +7,8 @@ import math
 
 from config import DOCK_TRANSITION, IMAGE_STACK, SIZES
 from ui.components.image_renderer import ImageRenderer
-from ui.image_layout import IMAGE_LAYOUT_CASCADE, normalize_image_layout
+from ui.image_layout import (IMAGE_LAYOUT_CASCADE, cascade_step,
+                             normalize_image_layout)
 
 
 # 圆点在窗口内的固定坐标
@@ -123,7 +124,7 @@ def visible_content_bounds(target_width: float, has_image: bool,
             DOT_CX, dot_cy, target_width, image_above=image_above)
         if mode == IMAGE_LAYOUT_CASCADE:
             stack_layers = min(max(image_count - 1, 0), 3)
-            stack_x = abs(IMAGE_STACK['cascade_offset_x']) * stack_layers
+            stack_x = cascade_step(target_width, image_count) * stack_layers
             stack_y = 0
         else:
             stack_layers = min(max(image_count - 1, 0), 2)

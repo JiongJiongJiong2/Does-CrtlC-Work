@@ -83,7 +83,7 @@ IMAGE_STACK = {
     'placeholder_opacity': 0.6, # 占位框透明度（图片未加载时）
     'border_color': (255, 255, 255, 25),  # 堆叠层边框色
     'bg_color': (20, 20, 23, 240),        # 堆叠层背景色
-    'cascade_offset_x': 20,     # 横向层叠每张图片的水平错位
+    'cascade_offset_x': 24,     # 横向层叠每张图片的水平错位（略宽于原 20 DIP）
     'cascade_opacities': (1.0, 0.78, 0.58, 0.42),
     'cascade_stagger': 0.06,    # 右侧镜像切换时每层错峰进度
 }

@@ -49,11 +49,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('config.py', '.'),
-        ('assets/image_layout/*.ico', 'assets/image_layout'),
-        ('assets/image_layout/LICENSE.txt', 'assets/image_layout'),
-    ],
+    datas=[('config.py', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

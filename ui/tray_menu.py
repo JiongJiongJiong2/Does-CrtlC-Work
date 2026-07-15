@@ -3,7 +3,7 @@
 import sys
 
 from PySide6.QtCore import Qt, Signal, QSize, QPoint
-from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPen
+from PySide6.QtGui import QColor, QCursor, QPainter
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (
 
 from ui.image_layout import (IMAGE_LAYOUT_CASCADE, IMAGE_LAYOUT_FAN,
                              normalize_image_layout)
-from ui.resource_path import resource_path
 
 
 class ToggleSwitch(QAbstractButton):
@@ -53,27 +52,33 @@ class ToggleSwitch(QAbstractButton):
         painter.drawEllipse(thumb_x, rect.top() + 1, thumb_size, thumb_size)
 
 
-class ImageLayoutSelector(QAbstractButton):
-    """Two official Fluent thumbnails in one compact, icon-only control."""
+class ImageLayoutSelector(QWidget):
+    """A compact two-choice text selector with real click targets."""
 
     mode_changed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._mode = IMAGE_LAYOUT_FAN
-        self._icons = (
-            QIcon(resource_path('assets', 'image_layout',
-                                'fluent_image_multiple.ico')),
-            QIcon(resource_path('assets', 'image_layout',
-                                'fluent_slide_multiple.ico')),
-        )
-        self.setCursor(Qt.PointingHandCursor)
-        self.setFixedSize(self.sizeHint())
+        self._language = 'zh'
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        self.btn_fan = QPushButton(self)
+        self.btn_cascade = QPushButton(self)
+        for button in (self.btn_fan, self.btn_cascade):
+            button.setCursor(Qt.PointingHandCursor)
+            button.setMinimumHeight(22)
+            layout.addWidget(button)
+        self.btn_fan.clicked.connect(lambda: self._select(IMAGE_LAYOUT_FAN))
+        self.btn_cascade.clicked.connect(
+            lambda: self._select(IMAGE_LAYOUT_CASCADE))
         self.setAccessibleName('Image layout')
-        self.clicked.connect(self.toggle_mode)
+        self.set_language('zh')
+        self.set_mode(IMAGE_LAYOUT_FAN)
 
     def sizeHint(self):
-        return QSize(64, 24)
+        return QSize(118, 24)
 
     @property
     def mode(self):
@@ -81,33 +86,39 @@ class ImageLayoutSelector(QAbstractButton):
 
     def set_mode(self, mode):
         mode = normalize_image_layout(mode)
-        if mode != self._mode:
-            self._mode = mode
-            self.update()
+        self._mode = mode
+        def style(active):
+            color = '#facc15' if active else '#9a9a9a'
+            underline = '#facc15' if active else 'transparent'
+            return (f'background: transparent; border-left: 0; '
+                    f'border-top: 0; border-right: 0; '
+                    f'border-bottom: 2px solid {underline}; '
+                    f'padding: 1px 6px; font-size: 10px; color: {color};')
+        self.btn_fan.setStyleSheet(style(mode == IMAGE_LAYOUT_FAN))
+        self.btn_cascade.setStyleSheet(style(mode == IMAGE_LAYOUT_CASCADE))
 
-    def toggle_mode(self):
-        mode = (IMAGE_LAYOUT_CASCADE
-                if self._mode == IMAGE_LAYOUT_FAN else IMAGE_LAYOUT_FAN)
+    def set_language(self, language):
+        self._language = language if language in ('zh', 'en') else 'zh'
+        if self._language == 'zh':
+            self.btn_fan.setText('扇形')
+            self.btn_cascade.setText('层叠')
+        else:
+            self.btn_fan.setText('Fan')
+            self.btn_cascade.setText('Cascade')
+
+    def _select(self, mode):
+        if mode == self._mode:
+            return
         self.set_mode(mode)
         self.mode_changed.emit(mode)
 
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        selected = 0 if self._mode == IMAGE_LAYOUT_FAN else 1
-        for index, icon in enumerate(self._icons):
-            left = index * 32
-            cell = self.rect().adjusted(left + 1, 1,
-                                        -(self.width() - left - 31), -1)
-            if index == selected:
-                painter.setBrush(QColor(250, 204, 21, 22))
-                painter.setPen(QPen(QColor('#facc15'), 1))
-                painter.drawRoundedRect(cell, 5, 5)
-            else:
-                painter.setPen(Qt.NoPen)
-            painter.setOpacity(1.0 if index == selected else 0.52)
-            icon.paint(painter, cell.adjusted(6, 3, -6, -3))
-        painter.end()
+    def click(self):
+        """Compatibility helper for the old single-row selector test path."""
+        self._select(IMAGE_LAYOUT_CASCADE
+                     if self._mode == IMAGE_LAYOUT_FAN else IMAGE_LAYOUT_FAN)
+
+    def text(self):
+        return ''
 
 
 class TrayMenuPopup(QMenu):
@@ -226,7 +237,7 @@ class TrayMenuPopup(QMenu):
 
         self.setStyleSheet('''
             QMenu#trayMenu { background: transparent; border: 0; padding: 0; }
-            #trayPanel { background: #252525; border: 1px solid #414141;
+            #trayPanel { background: #252525; border: 0;
                          border-radius: 10px; }
             #trayTitle { color: #f2f2f2; font-size: 11px; font-weight: 600; }
             #trayLabel { color: #ececec; font-size: 11px; }
@@ -291,6 +302,7 @@ class TrayMenuPopup(QMenu):
                 'background: transparent; border: 0; padding: 0;')
 
         self.setToolTip('English' if self._language == 'zh' else '中文')
+        self.image_layout_selector.set_language(self._language)
         self.image_layout_selector.setToolTip(
             '图片展示方式' if self._language == 'zh' else 'Image layout')
         self.adjustSize()

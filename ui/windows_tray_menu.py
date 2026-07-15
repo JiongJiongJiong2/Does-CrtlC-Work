@@ -8,7 +8,6 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 from ui.image_layout import (IMAGE_LAYOUT_CASCADE, IMAGE_LAYOUT_FAN,
                              normalize_image_layout)
-from ui.resource_path import resource_path
 
 
 WM_DRAWITEM = 0x002B
@@ -21,6 +20,7 @@ MF_DISABLED = 0x0002
 MF_GRAYED = 0x0001
 TPM_RIGHTBUTTON = 0x0002
 TPM_RETURNCMD = 0x0100
+TPM_NOANIMATION = 0x4000
 MIM_BACKGROUND = 0x00000002
 MIM_STYLE = 0x00000010
 MNS_NOCHECK = 0x80000000
@@ -32,9 +32,6 @@ DT_END_ELLIPSIS = 0x00008000
 DT_NOPREFIX = 0x00000800
 TRANSPARENT = 1
 PS_SOLID = 0
-IMAGE_ICON = 1
-LR_LOADFROMFILE = 0x0010
-DI_NORMAL = 0x0003
 EVENT_SYSTEM_MENUPOPUPSTART = 0x0006
 WINEVENT_OUTOFCONTEXT = 0x0000
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
@@ -46,6 +43,7 @@ ID_HOLDING = 3
 ID_IMAGE_LAYOUT = 4
 ID_DIVIDER = 5
 ID_QUIT = 6
+REOPEN_COMMANDS = (ID_LANGUAGE, ID_FEEDBACK, ID_HOLDING, ID_IMAGE_LAYOUT)
 
 WinEventProc = ctypes.WINFUNCTYPE(
     None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, wintypes.LONG,
@@ -150,7 +148,6 @@ class WindowsNativeTrayMenu(QWidget):
         self._title_font = None
         self._menu_window_hook = None
         self._menu_window_callback = None
-        self._layout_icons = []
         self._configure_win32()
 
     def _configure_win32(self):
@@ -196,16 +193,6 @@ class WindowsNativeTrayMenu(QWidget):
         self._user32.DrawTextW.argtypes = [
             wintypes.HDC, wintypes.LPCWSTR, ctypes.c_int,
             ctypes.POINTER(wintypes.RECT), wintypes.UINT]
-        self._user32.LoadImageW.restype = wintypes.HANDLE
-        self._user32.LoadImageW.argtypes = [
-            wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
-            ctypes.c_int, ctypes.c_int, wintypes.UINT]
-        self._user32.DrawIconEx.argtypes = [
-            wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.HICON,
-            ctypes.c_int, ctypes.c_int, wintypes.UINT, wintypes.HBRUSH,
-            wintypes.UINT]
-        self._user32.DestroyIcon.argtypes = [wintypes.HICON]
-
         self._gdi32.CreateSolidBrush.restype = wintypes.HBRUSH
         self._gdi32.CreateSolidBrush.argtypes = [wintypes.COLORREF]
         self._gdi32.CreatePen.restype = wintypes.HPEN
@@ -280,11 +267,9 @@ class WindowsNativeTrayMenu(QWidget):
         hwnd = wintypes.HWND(int(self.winId()))
         self._dpi = int(self._user32.GetDpiForWindow(hwnd) or 96)
         self._create_fonts()
-        self._load_layout_icons()
         menu, background_brush = self._create_menu()
         if not menu:
             self._delete_fonts()
-            self._delete_layout_icons()
             super().hide()
             return
 
@@ -294,15 +279,16 @@ class WindowsNativeTrayMenu(QWidget):
             self._user32.SetForegroundWindow(hwnd)
             self._install_menu_window_hook()
             command = ID_LANGUAGE
-            while command in (ID_LANGUAGE, ID_IMAGE_LAYOUT):
+            while command in REOPEN_COMMANDS:
                 command = int(self._user32.TrackPopupMenuEx(
-                    menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
+                    menu, TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_NOANIMATION,
                     position.x, position.y, hwnd, None) or 0)
-                if command in (ID_LANGUAGE, ID_IMAGE_LAYOUT):
+                if command in REOPEN_COMMANDS:
                     # A native HMENU ends its loop when an item is chosen.
-                    # Apply the language synchronously and immediately enter
-                    # the same menu at the same anchor, which refreshes every
-                    # visible label without requiring a second tray click.
+                    # Apply the state synchronously and immediately enter the
+                    # same menu at the same anchor. TPM_NOANIMATION removes
+                    # the open/close transition that otherwise reads as a
+                    # visible flash for a simple switch click.
                     self._apply_command(command)
             self._user32.PostMessageW(hwnd, WM_NULL, 0, 0)
         finally:
@@ -311,7 +297,6 @@ class WindowsNativeTrayMenu(QWidget):
             self._user32.DestroyMenu(menu)
             self._gdi32.DeleteObject(background_brush)
             self._delete_fonts()
-            self._delete_layout_icons()
             super().hide()
         self._apply_command(int(command or 0))
 
@@ -489,24 +474,16 @@ class WindowsNativeTrayMenu(QWidget):
                              self._normal_font, DT_LEFT, left=14, right=10)
 
     def _draw_image_layout_selector(self, hdc, row):
-        icon_size = self._px(18)
-        cell_width = self._px(32)
-        group_left = row.left + (row.right - row.left - cell_width * 2) // 2
-        selected = (0 if self._image_layout_mode == IMAGE_LAYOUT_FAN else 1)
-        for index in range(2):
-            cell_left = group_left + index * cell_width
-            if index == selected:
-                underline = wintypes.RECT(
-                    cell_left + self._px(6), row.bottom - self._px(3),
-                    cell_left + cell_width - self._px(6), row.bottom - self._px(1))
-                self._fill_rect(hdc, underline, '#facc15')
-            if index >= len(self._layout_icons) or not self._layout_icons[index]:
-                continue
-            x = cell_left + (cell_width - icon_size) // 2
-            y = row.top + (row.bottom - row.top - icon_size) // 2
-            self._user32.DrawIconEx(
-                hdc, x, y, self._layout_icons[index], icon_size, icon_size,
-                0, None, DI_NORMAL)
+        fan = '扇形' if self._language == 'zh' else 'Fan'
+        cascade = '层叠' if self._language == 'zh' else 'Cascade'
+        fan_color = '#facc15' if self._image_layout_mode == IMAGE_LAYOUT_FAN else '#9a9a9a'
+        cascade_color = ('#facc15'
+                         if self._image_layout_mode == IMAGE_LAYOUT_CASCADE
+                         else '#9a9a9a')
+        self._draw_text(hdc, fan, row, fan_color, self._normal_font,
+                        DT_LEFT, left=92, right=72)
+        self._draw_text(hdc, cascade, row, cascade_color, self._normal_font,
+                        DT_LEFT, left=138, right=12)
 
     def _draw_switch(self, hdc, row, checked):
         width, height = self._px(28), self._px(16)
@@ -577,22 +554,6 @@ class WindowsNativeTrayMenu(QWidget):
                 self._gdi32.DeleteObject(font)
         self._normal_font = None
         self._title_font = None
-
-    def _load_layout_icons(self):
-        self._delete_layout_icons()
-        size = self._px(18)
-        for filename in ('fluent_image_multiple.ico',
-                         'fluent_slide_multiple.ico'):
-            handle = self._user32.LoadImageW(
-                None, resource_path('assets', 'image_layout', filename),
-                IMAGE_ICON, size, size, LR_LOADFROMFILE)
-            self._layout_icons.append(handle)
-
-    def _delete_layout_icons(self):
-        for handle in self._layout_icons:
-            if handle:
-                self._user32.DestroyIcon(handle)
-        self._layout_icons = []
 
     def _px(self, value):
         return max(1, round(value * self._dpi / 96.0))

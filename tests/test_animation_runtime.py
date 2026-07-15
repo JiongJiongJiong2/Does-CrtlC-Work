@@ -28,6 +28,7 @@ from ui.windows_tray_menu import (
     ID_IMAGE_LAYOUT,
     ID_LANGUAGE,
     ID_QUIT,
+    REOPEN_COMMANDS,
     WindowsNativeTrayMenu,
 )
 from main import ClipboardFXApp
@@ -153,6 +154,8 @@ class TrayAndHoldingTests(unittest.TestCase):
         self.assertEqual(popup.btn_zh.text(), '中')
         self.assertEqual(popup.image_layout_selector.mode,
                          IMAGE_LAYOUT_CASCADE)
+        self.assertEqual(popup.image_layout_selector.btn_fan.text(), '扇形')
+        self.assertEqual(popup.image_layout_selector.btn_cascade.text(), '层叠')
         self.assertLessEqual(popup.sizeHint().width(), 280)
         popup.set_language('en')
         self.assertEqual(popup.holding_label.text(), 'Dismiss on Ctrl+V')
@@ -197,6 +200,10 @@ class TrayAndHoldingTests(unittest.TestCase):
         self.assertEqual(popup.image_layout_selector.mode,
                          IMAGE_LAYOUT_CASCADE)
         self.assertEqual(popup.image_layout_selector.text(), '')
+        popup.set_language('en')
+        self.assertEqual(popup.image_layout_selector.btn_fan.text(), 'Fan')
+        self.assertEqual(popup.image_layout_selector.btn_cascade.text(),
+                         'Cascade')
 
     def test_system_tray_uses_manual_nonactivating_context_path(self):
         app = ClipboardFXApp.__new__(ClipboardFXApp)
@@ -236,6 +243,8 @@ class TrayAndHoldingTests(unittest.TestCase):
         self.assertEqual(languages, ['en'])
         self.assertEqual(layouts, [IMAGE_LAYOUT_CASCADE])
         self.assertEqual(quitting, [True])
+        self.assertIn(ID_FEEDBACK, REOPEN_COMMANDS)
+        self.assertIn(ID_HOLDING, REOPEN_COMMANDS)
         menu.close()
 
     def test_context_and_left_click_open_the_same_menu(self):

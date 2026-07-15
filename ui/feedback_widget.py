@@ -703,7 +703,9 @@ class FeedbackWidget(QWidget):
         for index in range(count - 1, -1, -1):
             if index > 0 and self._stack_progress <= 0.01:
                 continue
-            offset_x = cascade_layer_offset(index, count, right_progress)
+            offset_x = cascade_layer_offset(
+                index, count, right_progress, self._target_width,
+                self._stack_progress)
             layer_opacity = float(opacities[min(index, len(opacities) - 1)])
             if index > 0:
                 layer_opacity *= self._stack_progress

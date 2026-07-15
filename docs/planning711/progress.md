@@ -286,3 +286,13 @@
 - Qt 与 Windows 原生菜单都增加一行 64×24/28 DIP 的 icon-only 两态选择器。使用 Microsoft Fluent 官方 `Image Multiple` 与 `Slide Multiple` 白色线性缩影，当前模式用黄色描边/底条表示；Windows 选择后重进同一 HMENU 循环，状态立即刷新而无需关闭后再打开。
 - 官方 SVG、生成的 16–64px 多分辨率 ICO、来源说明和 MIT 许可保存在 `assets/image_layout/`；spec 只收集两枚 ICO 与许可。运行时使用 Qt `QIcon`/Win32 `LoadImageW`，没有重新引入 QtSvg、GDI+ 或图标字体。
 - 验证结果：完整离屏测试 51/51、`compileall`、`git diff --check` 通过；PyInstaller one-file 构建成功，27,226,027-byte 归档确认含两枚 ICO 和许可，检索不到 Qt6Svg/qsvg。真实 Windows 下仍需验收图标区分度、菜单即时刷新、150% DPI 与四图右侧反转手感。
+
+### Phase 29: 菜单持久交互与 cascade 视觉修正
+- **Status:** in_progress
+- **Started:** 2026-07-15
+- 用户反馈：Windows 菜单点击开关后会退出且有闪烁；cascade 20 DIP 间距仍显得偏窄，展开缺少原始 stack 的弹性；菜单轮廓边框和图标选择器摆放不够协调。
+- 初步根因：`TrackPopupMenuEx` 每次命令选择都会结束当前 native loop，而循环目前只对语言/布局命令重进；cascade 的偏移只使用 dock progress，没有乘入 `_stack_progress` 的 spring 展开进度；Qt panel 仍保留 1px border。
+- **Implementation completed:** native loop 将 feedback/holding 也纳入同一 HMENU 重进集合，应用状态后使用 `TPM_NOANIMATION` 立即回到原锚点；Qt panel 外轮廓设为无边框。图片布局选择器改为实际可点的 `Fan/Cascade`（中文 `扇形/层叠`）文字分段按钮，native owner-draw 使用同一行文字和黄色选中态。
+- cascade 默认层差从 20 调整为 24 DIP；`cascade_step(target_width, count)` 在内容框足够宽时限制图片组足迹，短文本保留 20 DIP 最小层差；每层偏移乘入已有 `_stack_progress`，因此初次展开沿用原 stack 的 spring 弹性，右侧 dock 的错峰反转保持不变。
+- 资源仍保留在 `assets/image_layout/` 作为 Phase 28 设计来源，但不再被 `.spec` 收集或由运行时加载；这次文字选择器更适合原生菜单尺寸，也减少了成品无用资源。
+- 验证结果：完整离屏测试 51/51、`compileall`、`git diff --check` 通过；新 one-file 构建成功，`DoesCtrlCWork.exe` 为 27,211,938 bytes，归档检索不到 `assets/image_layout`、`Qt6Svg` 或 `qsvg`。真实 Windows 菜单重进的主观闪烁和 Shell 隐藏图标栏组合仍需手动确认。
