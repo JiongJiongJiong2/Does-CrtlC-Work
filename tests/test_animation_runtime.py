@@ -270,6 +270,7 @@ class TrayAndHoldingTests(unittest.TestCase):
 
     def test_animation_and_motion_clocks_stop_while_idle(self):
         engine = PropertyEngine()
+        self.assertEqual(engine._timer.interval(), 8)
         self.assertFalse(engine._timer.isActive())
         engine.set_frame_active('test', True)
         self.assertTrue(engine._timer.isActive())
@@ -284,7 +285,7 @@ class TrayAndHoldingTests(unittest.TestCase):
         tracker.stop_tracking()
         self.assertFalse(tracker._motion_timer.isActive())
 
-    def test_active_motion_clock_updates_faster_than_visual_clock(self):
+    def test_active_motion_clock_updates_at_high_frequency(self):
         tracker = MouseTracker()
         ticks = []
         tracker.spring_position_changed.connect(lambda *_: ticks.append(True))
@@ -293,7 +294,7 @@ class TrayAndHoldingTests(unittest.TestCase):
         self.app.exec()
         tracker.stop_tracking()
         # Allow scheduling headroom on a busy test host while still proving
-        # this is materially faster than the 16ms visual animation timer.
+        # the active 8ms motion clock is receiving regular callbacks.
         self.assertGreaterEqual(len(ticks), 9)
 
     def test_script_aware_style_uses_ui_font_without_cjk_tracking(self):

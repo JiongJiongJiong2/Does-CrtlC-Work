@@ -5,14 +5,23 @@ FeedbackLayout - 布局计算器
 
 import math
 
-from config import IMAGE_STACK, SIZES
+from config import DOCK_TRANSITION, IMAGE_STACK, SIZES
 from ui.components.image_renderer import ImageRenderer
 
 
 # 圆点在窗口内的固定坐标
 DOT_CX = 5
 DOT_CY = 5
-EDGE_DOCK_MARGIN = 12
+EDGE_DOCK_MARGIN = DOCK_TRANSITION['enter_margin']
+
+
+def edge_dock_required(visible_edge: float, boundary: float,
+                       currently_docked: bool,
+                       ui_scale: float = 1.0) -> bool:
+    """Return a stable dock target with an enter/exit hysteresis band."""
+    margin_key = 'exit_margin' if currently_docked else 'enter_margin'
+    margin = DOCK_TRANSITION[margin_key] * ui_scale
+    return visible_edge > boundary - margin
 
 
 def window_size(target_width: float, has_image: bool, ui_scale: float = 1.0) -> tuple:
@@ -35,19 +44,26 @@ def window_size(target_width: float, has_image: bool, ui_scale: float = 1.0) -> 
 
 
 def image_base_pos(dot_cx: float, dot_cy: float, target_width: float,
-                   direction: int = 1, image_above: bool = False) -> tuple:
+                   direction: int = 1, image_above: bool = False,
+                   horizontal_progress: float = None,
+                   vertical_progress: float = None) -> tuple:
     """计算图片区域基准位置
 
     Returns:
         (base_x, base_y) 元组
     """
-    base_x = dot_cx if direction >= 0 else dot_cx - ImageRenderer.IMAGE_BOX_SIZE
-    if image_above:
-        base_y = dot_cy - ImageRenderer.IMAGE_BOX_SIZE - 8
-    else:
-        base_y = dot_cy + SIZES['box_height'] + 8
-        if target_width <= 0:
-            base_y = dot_cy + 8
+    if horizontal_progress is None:
+        horizontal_progress = 1.0 if direction < 0 else 0.0
+    if vertical_progress is None:
+        vertical_progress = 1.0 if image_above else 0.0
+    horizontal_progress = max(0.0, min(float(horizontal_progress), 1.0))
+    vertical_progress = max(0.0, min(float(vertical_progress), 1.0))
+
+    base_x = dot_cx - ImageRenderer.IMAGE_BOX_SIZE * horizontal_progress
+    below_offset = SIZES['box_height'] + 8 if target_width > 0 else 8
+    above_offset = -ImageRenderer.IMAGE_BOX_SIZE - 8
+    base_y = dot_cy + below_offset + (
+        above_offset - below_offset) * vertical_progress
     return (base_x, base_y)
 
 

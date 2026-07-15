@@ -34,7 +34,10 @@ class PropertyEngine(QObject):
         super().__init__(parent)
         self._timer = QTimer(self)
         self._timer.setTimerType(Qt.PreciseTimer)
-        self._timer.setInterval(16)
+        # Feedback is only visible for a short active period. Match the
+        # cursor-follow clock so high-refresh displays do not see a fixed
+        # 16ms/62.5 FPS ceiling; the timer is still stopped while idle.
+        self._timer.setInterval(8)
         self._timer.timeout.connect(self._on_tick)
         self._clock = QElapsedTimer()
         self._clock.start()

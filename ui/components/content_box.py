@@ -12,11 +12,14 @@ class ContentBox:
     def paint(painter: QPainter, dot_cx: float, dot_cy: float,
               box_width: float, box_height: float, box_opacity: float,
               display_text: str, dot_scale: float, text_style: TextStyle,
-              final_layout: QStaticText = None, direction: int = 1) -> None:
+              final_layout: QStaticText = None, direction: int = 1,
+              mirror_progress: float = None) -> None:
         if box_width <= 0:
             return
-        mirrored = direction < 0
-        box_x = dot_cx - box_width if mirrored else dot_cx
+        if mirror_progress is None:
+            mirror_progress = 1.0 if direction < 0 else 0.0
+        mirror_progress = max(0.0, min(float(mirror_progress), 1.0))
+        box_x = dot_cx - box_width * mirror_progress
         box_y = dot_cy
         dot_radius = SIZES['dot_radius']
         if box_opacity > 0:
@@ -26,12 +29,17 @@ class ContentBox:
 
         painter.save()
         painter.setCompositionMode(QPainter.CompositionMode_DestinationOver)
-        gradient = QLinearGradient(
-            box_x + box_width if mirrored else box_x, box_y,
-            box_x if mirrored else box_x + box_width, box_y)
-        gradient.setColorAt(0, QColor(0, 0, 0, int(217 * box_opacity)))
+        # Keep a stable left-to-right gradient vector. Reversing its endpoints
+        # continuously would collapse it to zero length at 50%, causing a
+        # visible flash. Instead, interpolate only the two fading edge alphas.
+        gradient = QLinearGradient(box_x, box_y, box_x + box_width, box_y)
+        edge_alpha = int(217 * box_opacity)
+        gradient.setColorAt(
+            0, QColor(0, 0, 0, int(edge_alpha * (1.0 - mirror_progress))))
+        gradient.setColorAt(0.2, QColor(0, 0, 0, edge_alpha))
         gradient.setColorAt(0.8, QColor(0, 0, 0, int(217 * box_opacity)))
-        gradient.setColorAt(1, QColor(0, 0, 0, 0))
+        gradient.setColorAt(
+            1, QColor(0, 0, 0, int(edge_alpha * mirror_progress)))
         painter.setBrush(gradient)
         painter.setPen(Qt.NoPen)
         painter.drawRect(int(box_x), int(box_y), int(box_width), int(box_height))
@@ -47,12 +55,17 @@ class ContentBox:
         if display_text and box_width > 20:
             painter.setPen(QColor(COLORS['text']))
             painter.setFont(text_style.font)
-            if mirrored:
-                text_width = (final_layout.size().width() if final_layout is not None
-                              else text_style.metrics.horizontalAdvance(display_text))
-                text_x = max(box_x + 8, box_x + box_width - 10 - text_width)
+            normal_text_x = box_x + 10
+            if mirror_progress <= 0.0:
+                text_x = normal_text_x
             else:
-                text_x = box_x + 10
+                text_width = (final_layout.size().width()
+                              if final_layout is not None else
+                              text_style.metrics.horizontalAdvance(display_text))
+                mirrored_text_x = max(
+                    box_x + 8, box_x + box_width - 10 - text_width)
+                text_x = normal_text_x + (
+                    mirrored_text_x - normal_text_x) * mirror_progress
             text_top = box_y + (box_height - text_style.metrics.height()) / 2
             painter.save()
             painter.setClipRect(int(box_x + 8), int(box_y),

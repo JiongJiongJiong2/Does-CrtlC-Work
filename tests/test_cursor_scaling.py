@@ -15,8 +15,8 @@ from core.cursor_metrics import CursorMetrics, cursor_ui_scale
 from core.taskbar_boundary import TaskbarBoundary
 from ui.feedback_layout import (DOT_CX, bottom_dock_dot_y,
                                 clamp_window_position, dock_feedback_position,
-                                image_base_pos, visible_content_bounds,
-                                window_size)
+                                edge_dock_required, image_base_pos,
+                                visible_content_bounds, window_size)
 from ui.feedback_widget import FeedbackType, FeedbackWidget
 
 
@@ -88,6 +88,24 @@ class CursorMetricsTests(unittest.TestCase):
         self.assertTrue(mirrored)
         self.assertEqual(window_x + 500, 1920 - 12)
         self.assertEqual(window_x + 500 - DOT_CX, 1920 - 12 - DOT_CX)
+
+    def test_edge_docking_uses_hysteresis_before_returning_to_normal(self):
+        boundary = 1920
+        self.assertTrue(edge_dock_required(1910, boundary, False))
+        self.assertTrue(edge_dock_required(1900, boundary, True))
+        self.assertFalse(edge_dock_required(1894, boundary, True))
+
+    def test_image_position_interpolates_between_normal_and_mirrored_above(self):
+        normal = image_base_pos(DOT_CX, 5, 120)
+        middle = image_base_pos(
+            250, 83, 120, horizontal_progress=0.5,
+            vertical_progress=0.5)
+        docked = image_base_pos(
+            495, 161, 120, horizontal_progress=1.0,
+            vertical_progress=1.0)
+        self.assertEqual(normal, (5.0, 41.0))
+        self.assertEqual(middle, (190.0, 37.0))
+        self.assertEqual(docked, (375.0, 33.0))
 
     def test_bottom_docked_image_stack_opens_above_the_content_box(self):
         dot_y = bottom_dock_dot_y(image_count=3)
@@ -221,6 +239,68 @@ class ScaledFeedbackTests(unittest.TestCase):
         self.assertGreater(canvas.pixelColor(15, 60).alpha(), 0)
         self.assertGreater(canvas.pixelColor(20, 155).alpha(), 0)
         self.assertEqual(canvas.pixelColor(15, 198).alpha(), 0)
+
+    def test_dock_transition_position_stays_between_both_endpoints(self):
+        widget = FeedbackWidget(FeedbackType.COPY, text='copy')
+        widget._dock_initialized = True
+        widget._dock_right_progress = 0.5
+        widget._dock_bottom_progress = 0.5
+        context = {
+            'mouse_x': 1500.0,
+            'mouse_y': 1000.0,
+            'left': 0.0,
+            'top': 0.0,
+            'right': 1920.0,
+            'effective_bottom': 1080.0,
+            'normal_x': 1511.0,
+            'normal_y': 1011.0,
+            'normal_right': 120.0,
+            'normal_bottom': 33.0,
+        }
+        widget._apply_position(context)
+        docked_x = 1920 - 12 - widget.width()
+        docked_y = 1080 - 12 - 33
+        self.assertGreater(widget.x(), min(context['normal_x'], docked_x))
+        self.assertLess(widget.x(), max(context['normal_x'], docked_x))
+        self.assertGreater(widget.y(), min(context['normal_y'], docked_y))
+        self.assertLess(widget.y(), max(context['normal_y'], docked_y))
+
+    def test_reversing_dock_transition_starts_from_current_progress(self):
+        widget = FeedbackWidget(FeedbackType.COPY, text='copy')
+        widget._dock_initialized = True
+        widget._set_dock_target('right', True)
+        widget._engine._active_anims['dock_right_progress'].current = 0.42
+        widget._set_dock_target('right', False)
+        descriptor = widget._engine._active_anims['dock_right_progress']
+        self.assertAlmostEqual(descriptor.start, 0.42)
+        self.assertEqual(descriptor.end, 0.0)
+        widget._engine.stop()
+
+    def test_mid_transition_keeps_box_and_image_visible_without_gradient_flash(self):
+        image = QImage(32, 32, QImage.Format_ARGB32)
+        image.fill(0xFFFFFFFF)
+        widget = FeedbackWidget(
+            FeedbackType.COPY, text='copy', images=[image, image.copy()],
+            image_count=2)
+        widget._dock_initialized = True
+        widget._dock_right_progress = 0.5
+        widget._dock_bottom_progress = 0.5
+        widget._dot_scale = 1.0
+        widget._box_width = widget._target_width
+        widget._box_opacity = 1.0
+        widget._display_text = widget._text
+        widget._image_scramble_progress = 1.0
+        widget._stack_progress = 1.0
+        canvas = QImage(widget.size(), QImage.Format_ARGB32)
+        canvas.fill(0)
+        widget.render(canvas)
+
+        dot_x = widget.width() // 2
+        box_left = int(dot_x - widget._box_width / 2)
+        box_right = int(dot_x + widget._box_width / 2) - 1
+        self.assertGreater(canvas.pixelColor(box_left, 90).alpha(), 0)
+        self.assertGreater(canvas.pixelColor(box_right, 90).alpha(), 0)
+        self.assertGreater(canvas.pixelColor(dot_x, 45).alpha(), 0)
 
 
 if __name__ == '__main__':

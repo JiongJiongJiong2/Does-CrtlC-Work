@@ -9,8 +9,8 @@ from PySide6.QtGui import (QColor, QGuiApplication, QImage, QPainter, QPixmap,
                            QStaticText)
 from PySide6.QtWidgets import QWidget
 
-from config import (ANIMATION_DURATION, BLOCK_CHARS, COLORS, IMAGE_STACK,
-                    SCRAMBLE_CHARS, SIZES, TEXT_RENDER)
+from config import (ANIMATION_DURATION, BLOCK_CHARS, COLORS, DOCK_TRANSITION,
+                    IMAGE_STACK, SCRAMBLE_CHARS, SIZES, TEXT_RENDER)
 from core.taskbar_boundary import TaskbarBoundary
 from ui.animation.property_engine import PropertyEngine
 from ui.animation.spring_ease import spring_ease
@@ -19,10 +19,10 @@ from ui.components.content_box import ContentBox
 from ui.components.dot_renderer import DotRenderer
 from ui.components.image_renderer import ImageRenderCache, ImageRenderer
 from ui.components.stack_layer import StackLayer
-from ui.feedback_layout import (DOT_CX, DOT_CY, dock_feedback_position,
-                                bottom_dock_dot_y, image_base_pos,
-                                visible_content_bounds,
-                                window_size)
+from ui.feedback_layout import (DOT_CX, DOT_CY, EDGE_DOCK_MARGIN,
+                                bottom_dock_dot_y, edge_dock_required,
+                                image_base_pos, mouse_to_window,
+                                visible_content_bounds, window_size)
 from ui.text_style import TextStyle, TextStyleResolver
 
 
@@ -82,6 +82,10 @@ class FeedbackWidget(QWidget):
         self._display_text = ""
         self._dock_right = False
         self._dock_bottom = False
+        self._dock_right_progress = 0.0
+        self._dock_bottom_progress = 0.0
+        self._dock_initialized = False
+        self._position_context = None
 
         self._target_width = 0.0
         if feedback_type == FeedbackType.COPY and self._text:
@@ -150,49 +154,131 @@ class FeedbackWidget(QWidget):
         return self._holding_mode and self._feedback_type == FeedbackType.COPY
 
     def move_to_position(self, x, y):
+        context = self._build_position_context(x, y)
+        self._position_context = context
+        self._update_dock_targets(context)
+        self._apply_position(context)
+
+    def _build_position_context(self, x, y):
         screen = QGuiApplication.screenAt(QPoint(int(x), int(y)))
         if screen is not None:
             available = screen.availableGeometry()
             geometry = screen.geometry()
             normal_right, normal_bottom = visible_content_bounds(
                 self._target_width, self._has_image, self._image_count)
-            normal_bottom_edge = (y + self._cursor_offset[1] - DOT_CY * self._ui_scale +
-                                  normal_bottom * self._ui_scale)
+            normal_x, normal_y = mouse_to_window(
+                x, y, self._ui_scale, *self._cursor_offset, DOT_CY)
+            normal_bottom_edge = normal_y + normal_bottom * self._ui_scale
             screen_bottom = geometry.y() + geometry.height()
             if (normal_bottom_edge > available.y() + available.height() -
-                    12 * self._ui_scale or
+                    EDGE_DOCK_MARGIN * self._ui_scale or
                     y > screen_bottom - 96 * self._ui_scale):
                 effective_bottom = TaskbarBoundary.effective_bottom(
                     screen, int(self.winId()))
             else:
                 effective_bottom = available.y() + available.height()
-            bottom_docked = (normal_bottom_edge > effective_bottom -
-                             12 * self._ui_scale)
-            image_above = bottom_docked and self._has_image
-            dot_cy = (bottom_dock_dot_y(self._image_count)
-                      if image_above else DOT_CY)
-            visible_right, visible_bottom = visible_content_bounds(
-                self._target_width, self._has_image, self._image_count,
-                dot_cy, image_above)
-            win_x, win_y, dock_right = dock_feedback_position(
-                x, y, self.width(), self._ui_scale, *self._cursor_offset,
-                visible_right, visible_bottom,
-                (available.x(), available.y(),
-                 available.width(),
-                 max(0, int(effective_bottom - available.y()))), dot_cy)
-            if self._dock_right != dock_right or self._dock_bottom != bottom_docked:
-                self._dock_right = dock_right
-                self._dock_bottom = bottom_docked
-                self.update()
-        else:
-            # This only occurs transiently while displays are reconfigured.
-            visible_right, visible_bottom = visible_content_bounds(
-                self._target_width, self._has_image, self._image_count)
-            win_x, win_y, dock_right = dock_feedback_position(
-                x, y, self.width(), self._ui_scale, *self._cursor_offset,
-                visible_right, visible_bottom, (0, 0, 100000, 100000))
+            return {
+                'mouse_x': float(x),
+                'mouse_y': float(y),
+                'left': available.x(),
+                'top': available.y(),
+                'right': available.x() + available.width(),
+                'effective_bottom': float(effective_bottom),
+                'normal_x': float(normal_x),
+                'normal_y': float(normal_y),
+                'normal_right': float(normal_right),
+                'normal_bottom': float(normal_bottom),
+            }
+
+        # This only occurs transiently while displays are reconfigured.
+        normal_right, normal_bottom = visible_content_bounds(
+            self._target_width, self._has_image, self._image_count)
+        normal_x, normal_y = mouse_to_window(
+            x, y, self._ui_scale, *self._cursor_offset, DOT_CY)
+        return {
+            'mouse_x': float(x),
+            'mouse_y': float(y),
+            'left': 0.0,
+            'top': 0.0,
+            'right': 100000.0,
+            'effective_bottom': 100000.0,
+            'normal_x': float(normal_x),
+            'normal_y': float(normal_y),
+            'normal_right': float(normal_right),
+            'normal_bottom': float(normal_bottom),
+        }
+
+    def _update_dock_targets(self, context) -> None:
+        right_edge = (context['normal_x'] +
+                      context['normal_right'] * self._ui_scale)
+        bottom_edge = (context['normal_y'] +
+                       context['normal_bottom'] * self._ui_scale)
+        dock_right = edge_dock_required(
+            right_edge, context['right'], self._dock_right, self._ui_scale)
+        dock_bottom = edge_dock_required(
+            bottom_edge, context['effective_bottom'], self._dock_bottom,
+            self._ui_scale)
+
+        if not self._dock_initialized:
+            self._dock_initialized = True
             self._dock_right = dock_right
-            self._dock_bottom = False
+            self._dock_bottom = dock_bottom
+            self._dock_right_progress = 1.0 if dock_right else 0.0
+            self._dock_bottom_progress = 1.0 if dock_bottom else 0.0
+            return
+
+        self._set_dock_target('right', dock_right)
+        self._set_dock_target('bottom', dock_bottom)
+
+    def _set_dock_target(self, edge: str, docked: bool) -> None:
+        state_attr = f'_dock_{edge}'
+        progress_attr = f'_dock_{edge}_progress'
+        prop = f'dock_{edge}_progress'
+        if getattr(self, state_attr) == docked:
+            return
+        setattr(self, state_attr, docked)
+        current = (self._engine.get_value(prop, getattr(self, progress_attr))
+                   if self._engine.has_active(prop)
+                   else getattr(self, progress_attr))
+        setattr(self, progress_attr, current)
+        target = 1.0 if docked else 0.0
+        distance = abs(target - current)
+        duration = max(40, round(
+            DOCK_TRANSITION[f'{edge}_duration'] * distance))
+        self._engine.animate(
+            prop, current, target, duration,
+            QEasingCurve(QEasingCurve.OutCubic))
+
+    def _dock_progress(self, edge: str) -> float:
+        if not self._dock_initialized:
+            return 1.0 if getattr(self, f'_dock_{edge}') else 0.0
+        return max(0.0, min(
+            float(getattr(self, f'_dock_{edge}_progress')), 1.0))
+
+    def _apply_position(self, context) -> None:
+        right_progress = self._dock_progress('right')
+        bottom_progress = self._dock_progress('bottom')
+        scale = self._ui_scale
+        margin = EDGE_DOCK_MARGIN * scale
+
+        normal_x = context['normal_x']
+        normal_y = context['normal_y']
+        docked_x = context['right'] - margin - self.width()
+
+        dock_dot_cy = (bottom_dock_dot_y(self._image_count)
+                       if self._has_image else DOT_CY)
+        _, dock_visible_bottom = visible_content_bounds(
+            self._target_width, self._has_image, self._image_count,
+            dock_dot_cy, self._has_image)
+        docked_y = (context['effective_bottom'] - margin -
+                    dock_visible_bottom * scale)
+
+        win_x = normal_x + (docked_x - normal_x) * right_progress
+        win_y = normal_y + (docked_y - normal_y) * bottom_progress
+        current_dot_cy = DOT_CY + (dock_dot_cy - DOT_CY) * bottom_progress
+        win_x = max(context['left'] - DOT_CX * scale, win_x)
+        win_y = max(context['top'] - current_dot_cy * scale, win_y)
+        win_x, win_y = int(round(win_x)), int(round(win_y))
         if self.x() != win_x or self.y() != win_y:
             self.move(win_x, win_y)
 
@@ -207,6 +293,10 @@ class FeedbackWidget(QWidget):
         self._has_image = True
         self._awaiting_images = False
         self._resize_to_content()
+        if self._position_context is not None:
+            self.move_to_position(
+                self._position_context['mouse_x'],
+                self._position_context['mouse_y'])
         self._start_image_reveal()
         self.update()
 
@@ -367,6 +457,10 @@ class FeedbackWidget(QWidget):
         if not self._active:
             return
         self._sync_engine_properties()
+        if (self._position_context is not None and
+                (self._engine.has_active('dock_right_progress') or
+                 self._engine.has_active('dock_bottom_progress'))):
+            self._apply_position(self._position_context)
         now_ms = self._engine.now_ms
         self._advance_text_scramble(now_ms)
         self._advance_image_reveal(now_ms)
@@ -381,6 +475,8 @@ class FeedbackWidget(QWidget):
             'box_height': '_box_height',
             'box_opacity': '_box_opacity',
             'vanish_ratio': '_vanish_ratio',
+            'dock_right_progress': '_dock_right_progress',
+            'dock_bottom_progress': '_dock_bottom_progress',
         }
         for prop, attr in values.items():
             if self._engine.has_active(prop):
@@ -538,12 +634,16 @@ class FeedbackWidget(QWidget):
         # here preserves their relative positions and the existing animation
         # properties; the QWidget canvas and mouse anchor use the same factor.
         painter.scale(self._ui_scale, self._ui_scale)
-        direction = -1 if self._dock_right else 1
-        image_above = self._dock_bottom and self._has_image
-        dot_cy = (bottom_dock_dot_y(self._image_count)
-                  if image_above else DOT_CY)
+        right_progress = self._dock_progress('right')
+        bottom_progress = (self._dock_progress('bottom')
+                           if self._has_image else 0.0)
+        direction = -1 if right_progress >= 0.5 else 1
+        vertical_direction = -1 if bottom_progress >= 0.5 else 1
+        dock_dot_cy = (bottom_dock_dot_y(self._image_count)
+                       if self._has_image else DOT_CY)
+        dot_cy = DOT_CY + (dock_dot_cy - DOT_CY) * bottom_progress
         logical_width = self.width() / self._ui_scale
-        dot_cx = logical_width - DOT_CX if self._dock_right else DOT_CX
+        dot_cx = DOT_CX + (logical_width - 2 * DOT_CX) * right_progress
         if self._dot_scale > 0.01:
             DotRenderer.paint(painter, dot_cx, dot_cy, self._dot_scale, self._dot_color)
         if self._box_width > 1 and self._box_opacity > 0.01:
@@ -552,10 +652,11 @@ class FeedbackWidget(QWidget):
                              self._display_text, self._dot_scale,
                              self._text_style,
                              self._final_text_layout if self._display_text == self._text else None,
-                             direction)
+                             direction, right_progress)
         if self._has_image:
             image_x, image_y = image_base_pos(
-                dot_cx, dot_cy, self._target_width, direction, image_above)
+                dot_cx, dot_cy, self._target_width, direction,
+                bottom_progress >= 0.5, right_progress, bottom_progress)
             if self._stack_progress > 0.01 and self._image_count >= 2:
                 for index in range(min(self._image_count - 1, 2) - 1, -1, -1):
                     thumbnail = (self._stack_thumbnail_cache[index + 1]
@@ -563,7 +664,8 @@ class FeedbackWidget(QWidget):
                     StackLayer.paint(painter, image_x, image_y,
                                      ImageRenderer.IMAGE_BOX_SIZE, index,
                                      self._stack_progress, self._images, thumbnail,
-                                     direction, -1 if image_above else 1)
+                                     direction, vertical_direction,
+                                     right_progress, bottom_progress)
             ImageRenderer.paint(painter, image_x, image_y, self._main_image,
                                 self._image_scramble_progress, self._vanish_ratio,
                                 dot_cx, dot_cy, self._main_image_cache)

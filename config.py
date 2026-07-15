@@ -60,6 +60,15 @@ SPRING = {
     'damping': 70,
 }
 
+# 屏幕边缘停靠过渡。进入/退出使用不同阈值，避免光标贴着边缘时
+# 右侧镜像或图片上下布局在相邻帧反复切换。
+DOCK_TRANSITION = {
+    'right_duration': 150,
+    'bottom_duration': 190,
+    'enter_margin': 12,
+    'exit_margin': 26,
+}
+
 # 多图堆叠参数
 IMAGE_STACK = {
     'max_display': 3,           # 最多显示堆叠层数

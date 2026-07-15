@@ -17,7 +17,9 @@ class StackLayer:
     def paint(painter: QPainter, base_x: float, base_y: float,
               base_size: int, layer_idx: int, progress: float,
               images: list, thumbnail: QPixmap = None, direction: int = 1,
-              vertical_direction: int = 1) -> None:
+              vertical_direction: int = 1,
+              horizontal_progress: float = None,
+              vertical_progress: float = None) -> None:
         """绘制一个堆叠背景层
 
         Args:
@@ -32,11 +34,22 @@ class StackLayer:
         if progress < 0.01:
             return
 
+        if horizontal_progress is None:
+            horizontal_progress = 1.0 if direction < 0 else 0.0
+        if vertical_progress is None:
+            vertical_progress = 1.0 if vertical_direction < 0 else 0.0
+        horizontal_progress = max(0.0, min(float(horizontal_progress), 1.0))
+        vertical_progress = max(0.0, min(float(vertical_progress), 1.0))
+        horizontal_direction = 1.0 - 2.0 * horizontal_progress
+        vertical_direction = 1.0 - 2.0 * vertical_progress
+
         cfg = IMAGE_STACK
-        offset_x = cfg['offset_x'] * direction * (layer_idx + 1) * progress
+        offset_x = (cfg['offset_x'] * horizontal_direction *
+                    (layer_idx + 1) * progress)
         offset_y = (cfg['offset_y'] * vertical_direction *
                     (layer_idx + 1) * progress)
-        rotate = cfg['rotate_per_layer'] * direction * (layer_idx + 1) * progress
+        rotate = (cfg['rotate_per_layer'] * horizontal_direction *
+                  (layer_idx + 1) * progress)
 
         if layer_idx == 0:
             opacity = cfg['opacity_layer1'] * progress
@@ -52,8 +65,8 @@ class StackLayer:
 
         # Mirror the stack direction and rotate around its outer lower corner.
         transform = QTransform()
-        pivot_x = base_x + (base_size if direction >= 0 else 0)
-        pivot_y = base_y if vertical_direction < 0 else base_y + base_size
+        pivot_x = base_x + base_size * (1.0 - horizontal_progress)
+        pivot_y = base_y + base_size * (1.0 - vertical_progress)
         transform.translate(pivot_x, pivot_y)
         transform.rotate(rotate)
         transform.translate(-pivot_x, -pivot_y)
