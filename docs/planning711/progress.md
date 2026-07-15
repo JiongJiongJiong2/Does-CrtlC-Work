@@ -277,3 +277,12 @@
 - **Implementation completed:** 新增水平/垂直 dock progress，首次定位直接就位，后续右侧以 150ms、底部以 190ms `OutCubic` 过渡；12/26 DIP 进入/退出迟滞防止边缘抖动，中途反向从当前进度继续并按剩余距离缩短时长。
 - 窗口停靠修正与内部布局使用同一进度：黄色锚点、文字框位置/文字锚点、主图、堆叠偏移/旋转/pivot 全部连续变化。鼠标 normal endpoint 仍来自原有 spring，因此没有改变“向左拖、向右推”的跟随关系。文字框渐变固定轴向并插值两侧 alpha，消除了中点潜在闪烁。
 - 验证结果：`tests.test_cursor_scaling` 20/20、完整离屏回归 46/46、`compileall`、`git diff --check` 全部通过。图文长度配平没有实施；真实 Windows 下仍需体验右侧 150ms、底部 190ms 是否需要各自微调约 ±20ms。
+
+### Phase 28: 图片横向层叠模式与菜单图形切换
+- **Status:** complete (实现/自动化/打包归档完成，待真实 Windows 视觉验收)
+- **Started/Completed:** 2026-07-15
+- 新增 `fan/cascade` 布局状态并写入 `QSettings.image_layout_mode`，升级默认仍为 `fan`。新复制反馈读取当前设置，已经播放中的反馈不强制改布局。剪贴板最多预取 4 张；原扇形仍显示 3 张，新横向层叠显示 4 张。
+- `cascade` 不改变文字框长度：首图位于最高层，后层向右以 20 DIP 展开，不透明度为 `1.00/0.78/0.58/0.42`；贴右时图片组改为向左展开。复用 Phase 27 的 `dock_right_progress`，各层以 0.06 归一化相位错峰和 smoothstep 反转，保持可逆端点和首图最高 z-order。
+- Qt 与 Windows 原生菜单都增加一行 64×24/28 DIP 的 icon-only 两态选择器。使用 Microsoft Fluent 官方 `Image Multiple` 与 `Slide Multiple` 白色线性缩影，当前模式用黄色描边/底条表示；Windows 选择后重进同一 HMENU 循环，状态立即刷新而无需关闭后再打开。
+- 官方 SVG、生成的 16–64px 多分辨率 ICO、来源说明和 MIT 许可保存在 `assets/image_layout/`；spec 只收集两枚 ICO 与许可。运行时使用 Qt `QIcon`/Win32 `LoadImageW`，没有重新引入 QtSvg、GDI+ 或图标字体。
+- 验证结果：完整离屏测试 51/51、`compileall`、`git diff --check` 通过；PyInstaller one-file 构建成功，27,226,027-byte 归档确认含两枚 ICO 和许可，检索不到 Qt6Svg/qsvg。真实 Windows 下仍需验收图标区分度、菜单即时刷新、150% DPI 与四图右侧反转手感。

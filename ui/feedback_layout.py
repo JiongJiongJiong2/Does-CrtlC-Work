@@ -7,6 +7,7 @@ import math
 
 from config import DOCK_TRANSITION, IMAGE_STACK, SIZES
 from ui.components.image_renderer import ImageRenderer
+from ui.image_layout import IMAGE_LAYOUT_CASCADE, normalize_image_layout
 
 
 # 圆点在窗口内的固定坐标
@@ -67,10 +68,13 @@ def image_base_pos(dot_cx: float, dot_cy: float, target_width: float,
     return (base_x, base_y)
 
 
-def bottom_dock_dot_y(image_count: int = 0) -> float:
+def bottom_dock_dot_y(image_count: int = 0,
+                      image_layout_mode: str = 'fan') -> float:
     """Keep an upward-opening image stack inside the feedback canvas."""
+    mode = normalize_image_layout(image_layout_mode)
     stack_layers = min(max(image_count - 1, 0), 2)
-    stack_height = abs(IMAGE_STACK['offset_y']) * stack_layers
+    stack_height = (0 if mode == IMAGE_LAYOUT_CASCADE else
+                    abs(IMAGE_STACK['offset_y']) * stack_layers)
     return DOT_CY + ImageRenderer.IMAGE_BOX_SIZE + stack_height + 8
 
 
@@ -99,7 +103,8 @@ def clamp_window_position(x: int, y: int, width: int, height: int,
 
 def visible_content_bounds(target_width: float, has_image: bool,
                            image_count: int = 0, dot_cy: float = DOT_CY,
-                           image_above: bool = False) -> tuple[float, float]:
+                           image_above: bool = False,
+                           image_layout_mode: str = 'fan') -> tuple[float, float]:
     """Return the normal-direction visible right/bottom edges in logical px.
 
     The QWidget canvas deliberately has generous transparent space for
@@ -113,11 +118,17 @@ def visible_content_bounds(target_width: float, has_image: bool,
         right = max(right, DOT_CX + target_width)
         bottom = max(bottom, dot_cy + SIZES['box_height'])
     if has_image:
+        mode = normalize_image_layout(image_layout_mode)
         image_x, image_y = image_base_pos(
             DOT_CX, dot_cy, target_width, image_above=image_above)
-        stack_layers = min(max(image_count - 1, 0), 2)
-        stack_x = abs(IMAGE_STACK['offset_x']) * stack_layers
-        stack_y = abs(IMAGE_STACK['offset_y']) * stack_layers
+        if mode == IMAGE_LAYOUT_CASCADE:
+            stack_layers = min(max(image_count - 1, 0), 3)
+            stack_x = abs(IMAGE_STACK['cascade_offset_x']) * stack_layers
+            stack_y = 0
+        else:
+            stack_layers = min(max(image_count - 1, 0), 2)
+            stack_x = abs(IMAGE_STACK['offset_x']) * stack_layers
+            stack_y = abs(IMAGE_STACK['offset_y']) * stack_layers
         # A small allowance covers the rotated stack corners.
         right = max(right, image_x + ImageRenderer.IMAGE_BOX_SIZE + stack_x + 12)
         image_bottom = image_y + ImageRenderer.IMAGE_BOX_SIZE

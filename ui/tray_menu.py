@@ -3,7 +3,7 @@
 import sys
 
 from PySide6.QtCore import Qt, Signal, QSize, QPoint
-from PySide6.QtGui import QColor, QCursor, QPainter
+from PySide6.QtGui import QColor, QCursor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -16,6 +16,10 @@ from PySide6.QtWidgets import (
     QWidget,
     QWidgetAction,
 )
+
+from ui.image_layout import (IMAGE_LAYOUT_CASCADE, IMAGE_LAYOUT_FAN,
+                             normalize_image_layout)
+from ui.resource_path import resource_path
 
 
 class ToggleSwitch(QAbstractButton):
@@ -49,6 +53,63 @@ class ToggleSwitch(QAbstractButton):
         painter.drawEllipse(thumb_x, rect.top() + 1, thumb_size, thumb_size)
 
 
+class ImageLayoutSelector(QAbstractButton):
+    """Two official Fluent thumbnails in one compact, icon-only control."""
+
+    mode_changed = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._mode = IMAGE_LAYOUT_FAN
+        self._icons = (
+            QIcon(resource_path('assets', 'image_layout',
+                                'fluent_image_multiple.ico')),
+            QIcon(resource_path('assets', 'image_layout',
+                                'fluent_slide_multiple.ico')),
+        )
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(self.sizeHint())
+        self.setAccessibleName('Image layout')
+        self.clicked.connect(self.toggle_mode)
+
+    def sizeHint(self):
+        return QSize(64, 24)
+
+    @property
+    def mode(self):
+        return self._mode
+
+    def set_mode(self, mode):
+        mode = normalize_image_layout(mode)
+        if mode != self._mode:
+            self._mode = mode
+            self.update()
+
+    def toggle_mode(self):
+        mode = (IMAGE_LAYOUT_CASCADE
+                if self._mode == IMAGE_LAYOUT_FAN else IMAGE_LAYOUT_FAN)
+        self.set_mode(mode)
+        self.mode_changed.emit(mode)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        selected = 0 if self._mode == IMAGE_LAYOUT_FAN else 1
+        for index, icon in enumerate(self._icons):
+            left = index * 32
+            cell = self.rect().adjusted(left + 1, 1,
+                                        -(self.width() - left - 31), -1)
+            if index == selected:
+                painter.setBrush(QColor(250, 204, 21, 22))
+                painter.setPen(QPen(QColor('#facc15'), 1))
+                painter.drawRoundedRect(cell, 5, 5)
+            else:
+                painter.setPen(Qt.NoPen)
+            painter.setOpacity(1.0 if index == selected else 0.52)
+            icon.paint(painter, cell.adjusted(6, 3, -6, -3))
+        painter.end()
+
+
 class TrayMenuPopup(QMenu):
     """A standard QMenu lifecycle containing the existing custom panel.
 
@@ -60,6 +121,7 @@ class TrayMenuPopup(QMenu):
     feedback_toggled = Signal(bool)
     holding_toggled = Signal(bool)
     language_toggled = Signal(str)
+    image_layout_changed = Signal(str)
     quit_requested = Signal()
 
     _TEXT = {
@@ -134,6 +196,16 @@ class TrayMenuPopup(QMenu):
          self.holding_shortcut) = self._add_switch_row(layout)
         self.feedback_switch.toggled.connect(self.feedback_toggled)
         self.holding_switch.toggled.connect(self.holding_toggled)
+
+        self.image_layout_selector = ImageLayoutSelector(self.panel)
+        self.image_layout_selector.mode_changed.connect(
+            self.image_layout_changed)
+        selector_row = QHBoxLayout()
+        selector_row.setContentsMargins(0, 0, 0, 0)
+        selector_row.addStretch(1)
+        selector_row.addWidget(self.image_layout_selector)
+        selector_row.addStretch(1)
+        layout.addLayout(selector_row)
 
         divider = QFrame(self.panel)
         divider.setObjectName('trayDivider')
@@ -219,14 +291,18 @@ class TrayMenuPopup(QMenu):
                 'background: transparent; border: 0; padding: 0;')
 
         self.setToolTip('English' if self._language == 'zh' else '中文')
+        self.image_layout_selector.setToolTip(
+            '图片展示方式' if self._language == 'zh' else 'Image layout')
         self.adjustSize()
 
-    def set_state(self, feedback_enabled, holding_enabled):
+    def set_state(self, feedback_enabled, holding_enabled,
+                  image_layout_mode='fan'):
         for switch, checked in ((self.feedback_switch, feedback_enabled),
                                 (self.holding_switch, holding_enabled)):
             switch.blockSignals(True)
             switch.setChecked(checked)
             switch.blockSignals(False)
+        self.image_layout_selector.set_mode(image_layout_mode)
 
     def show_near_tray(self, tray_icon):
         """Show left-click menu at the same tray-relative anchor as before."""

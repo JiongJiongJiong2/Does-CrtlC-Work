@@ -17,6 +17,7 @@ from ui.feedback_layout import (DOT_CX, bottom_dock_dot_y,
                                 clamp_window_position, dock_feedback_position,
                                 edge_dock_required, image_base_pos,
                                 visible_content_bounds, window_size)
+from ui.image_layout import cascade_layer_offset
 from ui.feedback_widget import FeedbackType, FeedbackWidget
 
 
@@ -116,6 +117,18 @@ class CursorMetricsTests(unittest.TestCase):
         self.assertLess(image_y + 120, dot_y)
         self.assertEqual(bottom, dot_y + 28)
 
+    def test_cascade_uses_four_horizontal_slots_and_reverses_at_right_dock(self):
+        self.assertEqual(cascade_layer_offset(0, 4, 0.0), 0.0)
+        self.assertEqual(cascade_layer_offset(3, 4, 0.0), 60.0)
+        self.assertEqual(cascade_layer_offset(0, 4, 1.0), 0.0)
+        self.assertEqual(cascade_layer_offset(3, 4, 1.0), -60.0)
+        fan_right, _ = visible_content_bounds(120, True, image_count=3)
+        cascade_right, _ = visible_content_bounds(
+            120, True, image_count=4, image_layout_mode='cascade')
+        self.assertGreater(cascade_right, fan_right)
+        self.assertLess(bottom_dock_dot_y(4, 'cascade'),
+                        bottom_dock_dot_y(3, 'fan'))
+
     def test_autohide_taskbar_uses_visible_top_but_ignores_hidden_strip(self):
         class Rect:
             def __init__(self, x, y, width, height):
@@ -182,6 +195,25 @@ class ScaledFeedbackTests(unittest.TestCase):
         # belongs to the scaled stack layer; if StackLayer overwrites the outer
         # transform, this area remains transparent.
         self.assertGreater(canvas.pixelColor(200, 100).alpha(), 0)
+
+    def test_scaled_four_image_cascade_keeps_its_horizontal_tail_visible(self):
+        images = []
+        for color in (0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00):
+            image = QImage(32, 32, QImage.Format_ARGB32)
+            image.fill(color)
+            images.append(image)
+        widget = FeedbackWidget(
+            FeedbackType.COPY, images=images, image_count=4,
+            image_layout_mode='cascade', ui_scale=1.5)
+        widget._dot_scale = 1.0
+        widget._image_scramble_progress = 1.0
+        widget._stack_progress = 1.0
+        canvas = QImage(widget.size(), QImage.Format_ARGB32)
+        canvas.fill(0)
+        widget.render(canvas)
+        # The fourth card ends near 278 physical px. This point is outside the
+        # 180px-wide scaled front card and therefore proves the tail scaled too.
+        self.assertGreater(canvas.pixelColor(260, 100).alpha(), 0)
 
     def test_right_dock_draws_yellow_anchor_on_the_right_without_mirroring_text(self):
         widget = FeedbackWidget(FeedbackType.COPY, text='copy')

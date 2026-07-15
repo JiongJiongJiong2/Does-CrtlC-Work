@@ -6,6 +6,10 @@ from ctypes import wintypes
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
+from ui.image_layout import (IMAGE_LAYOUT_CASCADE, IMAGE_LAYOUT_FAN,
+                             normalize_image_layout)
+from ui.resource_path import resource_path
+
 
 WM_DRAWITEM = 0x002B
 WM_MEASUREITEM = 0x002C
@@ -28,6 +32,9 @@ DT_END_ELLIPSIS = 0x00008000
 DT_NOPREFIX = 0x00000800
 TRANSPARENT = 1
 PS_SOLID = 0
+IMAGE_ICON = 1
+LR_LOADFROMFILE = 0x0010
+DI_NORMAL = 0x0003
 EVENT_SYSTEM_MENUPOPUPSTART = 0x0006
 WINEVENT_OUTOFCONTEXT = 0x0000
 DWMWA_WINDOW_CORNER_PREFERENCE = 33
@@ -36,8 +43,9 @@ DWMWCP_ROUND = 2
 ID_LANGUAGE = 1
 ID_FEEDBACK = 2
 ID_HOLDING = 3
-ID_DIVIDER = 4
-ID_QUIT = 5
+ID_IMAGE_LAYOUT = 4
+ID_DIVIDER = 5
+ID_QUIT = 6
 
 WinEventProc = ctypes.WINFUNCTYPE(
     None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, wintypes.LONG,
@@ -103,6 +111,7 @@ class WindowsNativeTrayMenu(QWidget):
     feedback_toggled = Signal(bool)
     holding_toggled = Signal(bool)
     language_toggled = Signal(str)
+    image_layout_changed = Signal(str)
     quit_requested = Signal()
 
     _TEXT = {
@@ -121,6 +130,7 @@ class WindowsNativeTrayMenu(QWidget):
         ID_LANGUAGE: 24,
         ID_FEEDBACK: 22,
         ID_HOLDING: 22,
+        ID_IMAGE_LAYOUT: 28,
         ID_DIVIDER: 5,
         ID_QUIT: 24,
     }
@@ -133,12 +143,14 @@ class WindowsNativeTrayMenu(QWidget):
         self._language = language if language in self._TEXT else 'zh'
         self._feedback_enabled = True
         self._holding_enabled = False
+        self._image_layout_mode = IMAGE_LAYOUT_FAN
         self._menu_open = False
         self._dpi = 96
         self._normal_font = None
         self._title_font = None
         self._menu_window_hook = None
         self._menu_window_callback = None
+        self._layout_icons = []
         self._configure_win32()
 
     def _configure_win32(self):
@@ -184,6 +196,15 @@ class WindowsNativeTrayMenu(QWidget):
         self._user32.DrawTextW.argtypes = [
             wintypes.HDC, wintypes.LPCWSTR, ctypes.c_int,
             ctypes.POINTER(wintypes.RECT), wintypes.UINT]
+        self._user32.LoadImageW.restype = wintypes.HANDLE
+        self._user32.LoadImageW.argtypes = [
+            wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
+            ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        self._user32.DrawIconEx.argtypes = [
+            wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.HICON,
+            ctypes.c_int, ctypes.c_int, wintypes.UINT, wintypes.HBRUSH,
+            wintypes.UINT]
+        self._user32.DestroyIcon.argtypes = [wintypes.HICON]
 
         self._gdi32.CreateSolidBrush.restype = wintypes.HBRUSH
         self._gdi32.CreateSolidBrush.argtypes = [wintypes.COLORREF]
@@ -235,9 +256,11 @@ class WindowsNativeTrayMenu(QWidget):
     def set_language(self, language):
         self._language = language if language in self._TEXT else 'zh'
 
-    def set_state(self, feedback_enabled, holding_enabled):
+    def set_state(self, feedback_enabled, holding_enabled,
+                  image_layout_mode='fan'):
         self._feedback_enabled = bool(feedback_enabled)
         self._holding_enabled = bool(holding_enabled)
+        self._image_layout_mode = normalize_image_layout(image_layout_mode)
 
     def isVisible(self):
         return self._menu_open
@@ -257,9 +280,11 @@ class WindowsNativeTrayMenu(QWidget):
         hwnd = wintypes.HWND(int(self.winId()))
         self._dpi = int(self._user32.GetDpiForWindow(hwnd) or 96)
         self._create_fonts()
+        self._load_layout_icons()
         menu, background_brush = self._create_menu()
         if not menu:
             self._delete_fonts()
+            self._delete_layout_icons()
             super().hide()
             return
 
@@ -269,11 +294,11 @@ class WindowsNativeTrayMenu(QWidget):
             self._user32.SetForegroundWindow(hwnd)
             self._install_menu_window_hook()
             command = ID_LANGUAGE
-            while command == ID_LANGUAGE:
+            while command in (ID_LANGUAGE, ID_IMAGE_LAYOUT):
                 command = int(self._user32.TrackPopupMenuEx(
                     menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
                     position.x, position.y, hwnd, None) or 0)
-                if command == ID_LANGUAGE:
+                if command in (ID_LANGUAGE, ID_IMAGE_LAYOUT):
                     # A native HMENU ends its loop when an item is chosen.
                     # Apply the language synchronously and immediately enter
                     # the same menu at the same anchor, which refreshes every
@@ -286,6 +311,7 @@ class WindowsNativeTrayMenu(QWidget):
             self._user32.DestroyMenu(menu)
             self._gdi32.DeleteObject(background_brush)
             self._delete_fonts()
+            self._delete_layout_icons()
             super().hide()
         self._apply_command(int(command or 0))
 
@@ -347,7 +373,7 @@ class WindowsNativeTrayMenu(QWidget):
         info.dwStyle = MNS_NOCHECK
         info.hbrBack = background
         self._user32.SetMenuInfo(menu, ctypes.byref(info))
-        for item_id in (ID_LANGUAGE, ID_FEEDBACK, ID_HOLDING,
+        for item_id in (ID_LANGUAGE, ID_FEEDBACK, ID_HOLDING, ID_IMAGE_LAYOUT,
                         ID_DIVIDER, ID_QUIT):
             flags = MF_OWNERDRAW
             if item_id == ID_DIVIDER:
@@ -385,6 +411,12 @@ class WindowsNativeTrayMenu(QWidget):
         elif command == ID_HOLDING:
             self._holding_enabled = not self._holding_enabled
             self.holding_toggled.emit(self._holding_enabled)
+        elif command == ID_IMAGE_LAYOUT:
+            self._image_layout_mode = (
+                IMAGE_LAYOUT_CASCADE
+                if self._image_layout_mode == IMAGE_LAYOUT_FAN
+                else IMAGE_LAYOUT_FAN)
+            self.image_layout_changed.emit(self._image_layout_mode)
         elif command == ID_QUIT:
             self.quit_requested.emit()
 
@@ -450,9 +482,31 @@ class WindowsNativeTrayMenu(QWidget):
             self._draw_text(hdc, text['holding'], rect, '#ececec',
                             self._normal_font, DT_LEFT, left=14, right=50)
             self._draw_switch(hdc, rect, self._holding_enabled)
+        elif draw.itemID == ID_IMAGE_LAYOUT:
+            self._draw_image_layout_selector(hdc, rect)
         elif draw.itemID == ID_QUIT:
             self._draw_text(hdc, text['quit'], rect, '#ececec',
-                            self._normal_font, DT_LEFT, left=14, right=10)
+                             self._normal_font, DT_LEFT, left=14, right=10)
+
+    def _draw_image_layout_selector(self, hdc, row):
+        icon_size = self._px(18)
+        cell_width = self._px(32)
+        group_left = row.left + (row.right - row.left - cell_width * 2) // 2
+        selected = (0 if self._image_layout_mode == IMAGE_LAYOUT_FAN else 1)
+        for index in range(2):
+            cell_left = group_left + index * cell_width
+            if index == selected:
+                underline = wintypes.RECT(
+                    cell_left + self._px(6), row.bottom - self._px(3),
+                    cell_left + cell_width - self._px(6), row.bottom - self._px(1))
+                self._fill_rect(hdc, underline, '#facc15')
+            if index >= len(self._layout_icons) or not self._layout_icons[index]:
+                continue
+            x = cell_left + (cell_width - icon_size) // 2
+            y = row.top + (row.bottom - row.top - icon_size) // 2
+            self._user32.DrawIconEx(
+                hdc, x, y, self._layout_icons[index], icon_size, icon_size,
+                0, None, DI_NORMAL)
 
     def _draw_switch(self, hdc, row, checked):
         width, height = self._px(28), self._px(16)
@@ -523,6 +577,22 @@ class WindowsNativeTrayMenu(QWidget):
                 self._gdi32.DeleteObject(font)
         self._normal_font = None
         self._title_font = None
+
+    def _load_layout_icons(self):
+        self._delete_layout_icons()
+        size = self._px(18)
+        for filename in ('fluent_image_multiple.ico',
+                         'fluent_slide_multiple.ico'):
+            handle = self._user32.LoadImageW(
+                None, resource_path('assets', 'image_layout', filename),
+                IMAGE_ICON, size, size, LR_LOADFROMFILE)
+            self._layout_icons.append(handle)
+
+    def _delete_layout_icons(self):
+        for handle in self._layout_icons:
+            if handle:
+                self._user32.DestroyIcon(handle)
+        self._layout_icons = []
 
     def _px(self, value):
         return max(1, round(value * self._dpi / 96.0))

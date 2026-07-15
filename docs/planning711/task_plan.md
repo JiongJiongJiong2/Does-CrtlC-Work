@@ -4,7 +4,7 @@
 基于当前未暂存改动、历史实现与 TMP 动画原型，明确动画退化原因、核心剪贴板逻辑问题，以及 Python/C#/C++ 的合理演进路线，并给出可执行的优先级计划。
 
 ## Current Phase
-Phase 27 (边缘停靠过渡与图文视觉长度方案；边界动画完成，待真机手感验收)
+Phase 28 (图片横向层叠模式与菜单图形切换；实现与自动化完成，待真实 Windows 视觉验收)
 
 ## Phases
 
@@ -232,6 +232,20 @@ Phase 27 (边缘停靠过渡与图文视觉长度方案；边界动画完成，�
 - [ ] 在 100%/150% DPI、单图/三图、短文本/长文本及任务栏自动隐藏场景完成验收
 - **Status:** in_progress (边界动画与自动化完成；图文长度配平未实施，真实 Windows 手感待验收)
 
+### Phase 28: 图片横向层叠模式与菜单图形切换
+- [x] 明确新模式的层级、数量、透明度和普通/右侧停靠位置关系
+- [x] 审查现有三图旋转堆叠、缩略图缓存、右侧 dock progress 与菜单状态持久化路径
+- [x] 调查 Fluent System Icons、Material Symbols/Icons 的候选素材、格式与许可
+- [x] 确定菜单采用两枚白色缩影的单行图形选择器，并兼容原生 HMENU 与 Qt 回退
+- [x] 增加 `fan/cascade` 图片布局枚举、QSettings 持久化和托盘菜单信号
+- [x] 实现横向 cascade：最多显示四张、首图最高层、后层逐步降低不透明度
+- [x] 将右侧 dock progress 接入四张图片的位置反转与按层错峰移动
+- [x] 引入 Fluent 官方素材的多分辨率本地资源及许可声明，不增加运行时 SVG/图标字体依赖
+- [x] 增加两种模式、1–4/4+ 图片、右侧切换、DPI、菜单状态与打包资源回归测试
+- [ ] 在真实 Windows 隐藏图标栏入口确认两枚缩影、黄色选中态、即时刷新和 100%/150% DPI 观感
+- [ ] 真机比较 4 图 normal/right-dock 反转的错峰速度；仅在感觉拖沓时微调 `cascade_stagger`
+- **Status:** complete (实现、51 项自动化及 one-file 归档验证完成；待真实 Windows 视觉手感验收)
+
 ## Key Questions
 1. TMP 原型与当前动画在状态机、帧时序、缓动、合成方式上分别差在哪里？
 2. 当前实现检测的是 Ctrl+C 按键、选中文本，还是系统剪贴板实际变化？
@@ -278,6 +292,7 @@ Phase 27 (边缘停靠过渡与图文视觉长度方案；边界动画完成，�
 | Phase 23 首次真实 owner-draw 预览的 GDI 句柄按默认 32 位解释 | 1 | `FillRect` 暴露 HDC/HBRUSH overflow；补齐 FillRect/DrawText/SetBkMode/SetTextColor/RoundRect/Ellipse 的 64 位 argtypes 后重测。 |
 | Phase 23 回归命令末尾用 CIM 查询已有进程被系统拒绝访问 | 1 | 测试、compileall、diff check 已先完成并通过；进程枚举不是实现验收条件，不申请额外系统权限。 |
 | Phase 27 首次组合补丁使用了与实际 `ContentBox.paint` 不一致的类型签名上下文 | 1 | 整组补丁未写入；重新读取目标文件并拆分为逐文件精确补丁。 |
+| Phase 28 首次 one-file 构建被 60 秒命令上限中止 | 1 | 保留产品代码不变，以可持续返回进度的长任务重新构建；99.6 秒成功生成并检查归档。 |
 
 ## Notes
 - 只创建本次审查所需的规划文档，不修改产品代码。

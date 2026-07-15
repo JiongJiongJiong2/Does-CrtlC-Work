@@ -19,11 +19,13 @@ from ui.animation.spring_ease import spring_ease
 from ui.animation.state_machine import AnimationState, AnimationStateMachine
 from ui.components.content_box import ContentBox
 from ui.feedback_widget import FeedbackType, FeedbackWidget
+from ui.image_layout import IMAGE_LAYOUT_CASCADE, IMAGE_LAYOUT_FAN
 from ui.text_style import TextStyleResolver
 from ui.tray_menu import TrayMenuPopup, create_tray_menu
 from ui.windows_tray_menu import (
     ID_FEEDBACK,
     ID_HOLDING,
+    ID_IMAGE_LAYOUT,
     ID_LANGUAGE,
     ID_QUIT,
     WindowsNativeTrayMenu,
@@ -143,11 +145,14 @@ class TrayAndHoldingTests(unittest.TestCase):
 
     def test_tray_popup_uses_compact_switches_and_language_marker(self):
         popup = TrayMenuPopup('zh')
-        popup.set_state(feedback_enabled=True, holding_enabled=False)
+        popup.set_state(feedback_enabled=True, holding_enabled=False,
+                        image_layout_mode=IMAGE_LAYOUT_CASCADE)
         self.assertTrue(popup.feedback_switch.isChecked())
         self.assertFalse(popup.holding_switch.isChecked())
         self.assertEqual(popup.btn_en.text(), 'EN')
         self.assertEqual(popup.btn_zh.text(), '中')
+        self.assertEqual(popup.image_layout_selector.mode,
+                         IMAGE_LAYOUT_CASCADE)
         self.assertLessEqual(popup.sizeHint().width(), 280)
         popup.set_language('en')
         self.assertEqual(popup.holding_label.text(), 'Dismiss on Ctrl+V')
@@ -182,6 +187,17 @@ class TrayAndHoldingTests(unittest.TestCase):
         self.assertTrue(popup.isVisible())
         popup.close()
 
+    def test_image_layout_selector_toggles_without_text_button(self):
+        popup = TrayMenuPopup('zh')
+        changed = []
+        popup.image_layout_changed.connect(changed.append)
+        self.assertEqual(popup.image_layout_selector.mode, IMAGE_LAYOUT_FAN)
+        popup.image_layout_selector.click()
+        self.assertEqual(changed, [IMAGE_LAYOUT_CASCADE])
+        self.assertEqual(popup.image_layout_selector.mode,
+                         IMAGE_LAYOUT_CASCADE)
+        self.assertEqual(popup.image_layout_selector.text(), '')
+
     def test_system_tray_uses_manual_nonactivating_context_path(self):
         app = ClipboardFXApp.__new__(ClipboardFXApp)
         app._language = 'zh'
@@ -203,18 +219,22 @@ class TrayAndHoldingTests(unittest.TestCase):
         feedback = []
         holding = []
         languages = []
+        layouts = []
         quitting = []
         menu.feedback_toggled.connect(feedback.append)
         menu.holding_toggled.connect(holding.append)
         menu.language_toggled.connect(languages.append)
+        menu.image_layout_changed.connect(layouts.append)
         menu.quit_requested.connect(lambda: quitting.append(True))
         menu._apply_command(ID_FEEDBACK)
         menu._apply_command(ID_HOLDING)
         menu._apply_command(ID_LANGUAGE)
+        menu._apply_command(ID_IMAGE_LAYOUT)
         menu._apply_command(ID_QUIT)
         self.assertEqual(feedback, [False])
         self.assertEqual(holding, [True])
         self.assertEqual(languages, ['en'])
+        self.assertEqual(layouts, [IMAGE_LAYOUT_CASCADE])
         self.assertEqual(quitting, [True])
         menu.close()
 
@@ -235,6 +255,34 @@ class TrayAndHoldingTests(unittest.TestCase):
         app._on_tray_activated(QSystemTrayIcon.ActivationReason.Context)
         app._on_tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
         self.assertEqual(app.tray_menu.shown, 2)
+
+    def test_image_layout_setting_is_normalized_persisted_and_synced(self):
+        class Settings:
+            def __init__(self):
+                self.values = {}
+
+            def setValue(self, key, value):
+                self.values[key] = value
+
+        class Tray:
+            def setToolTip(self, text):
+                self.tooltip = text
+
+        class Menu:
+            def set_state(self, feedback, holding, mode):
+                self.state = feedback, holding, mode
+
+        app = ClipboardFXApp.__new__(ClipboardFXApp)
+        app._settings = Settings()
+        app.tray = Tray()
+        app.tray_menu = Menu()
+        app.silent_mode = False
+        app._holding_mode = False
+        ClipboardFXApp._set_image_layout_mode(app, 'unknown')
+        self.assertEqual(app._image_layout_mode, IMAGE_LAYOUT_FAN)
+        self.assertEqual(app._settings.values['image_layout_mode'],
+                         IMAGE_LAYOUT_FAN)
+        self.assertEqual(app.tray_menu.state, (True, False, IMAGE_LAYOUT_FAN))
 
     def test_copy_full_exit_keeps_the_two_pixel_line_phase(self):
         original = ANIMATION_DURATION.copy()
@@ -267,6 +315,25 @@ class TrayAndHoldingTests(unittest.TestCase):
         self.assertIsNotNone(widget._main_image_cache)
         self.assertEqual(len(widget._main_image_cache.reveal_frames), 25)
         self.assertEqual(len(widget._stack_thumbnail_cache), 2)
+
+    def test_layout_modes_keep_four_images_preloaded_but_use_own_limits(self):
+        images = []
+        for color in (0xFFFF0000, 0xFF00FF00, 0xFF0000FF,
+                      0xFFFFFF00, 0xFFFF00FF):
+            image = QImage(16, 16, QImage.Format_ARGB32)
+            image.fill(color)
+            images.append(image)
+        fan = FeedbackWidget(
+            FeedbackType.COPY, images=images, image_count=5,
+            image_layout_mode=IMAGE_LAYOUT_FAN)
+        cascade = FeedbackWidget(
+            FeedbackType.COPY, images=images, image_count=5,
+            image_layout_mode=IMAGE_LAYOUT_CASCADE)
+        self.assertEqual(fan._image_count, 3)
+        self.assertEqual(cascade._image_count, 4)
+        self.assertEqual(len(fan._images), 4)
+        self.assertEqual(len(cascade._image_render_caches), 4)
+        self.assertEqual(len(cascade._image_render_caches[1].reveal_frames), 1)
 
     def test_animation_and_motion_clocks_stop_while_idle(self):
         engine = PropertyEngine()

@@ -147,6 +147,19 @@
 - 位置计算拆为目标判断与应用两步：鼠标 spring 输出仍作为 normal endpoint，边界只提供额外的 docked endpoint；窗口、圆点、文字框、主图和堆叠层共享水平/垂直 progress。这样没有给整个鼠标跟随链再套 spring，原有“左拖、右推”语义保持不变。
 - `ContentBox` 的矩形和文字锚点连续插值；渐变没有直接交换起止点，因为该做法会在 50% 形成零长度渐变并闪烁，现改为固定从左到右，仅连续改变两侧 alpha。`StackLayer` 同时插值偏移、旋转方向和 pivot，避免过去整数方向在中点跳变。
 - Phase 27 自动化：边界/缩放专项 20/20、完整离屏回归 46/46、`compileall` 和 `git diff --check` 通过。覆盖迟滞、图片连续位置、窗口中间位置、反向动画从当前进度继续、中间帧文字框/图片可见，以及旧右侧镜像和底部上置终态。尚未在真实 Windows/DWM 下判断 150/190ms 的主观速度。
+- Phase 28 新模式定义建议：保留当前旋转扇形为 `fan`；新增纯水平 `cascade`。正常方向下第 1 张位于最左且 z-order 最高，后续第 2–4 张分别向右偏移；绘制顺序从第 4 张到第 1 张，确保首图始终压在最上层。建议偏移 20 DIP，四张总足迹为 180 DIP；不改变文字框宽度。
+- `cascade` 最多显示四张，4 张以上仍只画前四张，完整数量继续由现有 `Copied N Images` 文本表达，不增加 `+N` 徽标。建议不透明度按前到后为 `1.00/0.78/0.58/0.42`，边框可保持更高 alpha，避免第四张在深灰背景上消失。当前 `IMAGE_STACK.max_display=3` 同时控制读取和显示，实现时应拆成“最多预加载 4 张”和“fan 显示 3 张/cascade 显示 4 张”，否则菜单切换后拿不到第四张缓存。
+- 右边界转换直接复用 Phase 27 的 `dock_right_progress`，不另建第二套窗口动画。对第 i 张（0 起始、总数 n）使用 normal `x=i*step`、right-docked `x=(n-1-i)*step`；首图因此从最左移动到最右且仍保持最高 z-order。为体现“首图先走、后图依次”，各层对同一 progress 使用约 10–16ms 的归一化错峰；反向离开右边界时自然按相反顺序回放。位置必须按每张的 index 插值，不能只把整个图片组镜像，否则首图不会换到右端。
+- 菜单现状限制：Windows 路径是 owner-draw `HMENU`，Qt `QMenu/QWidgetAction` 只是回退。一个原生菜单 item 没有两个可靠的横向 command hit region；为此去 subclass `#32768` 菜单窗口会明显过度工程化并损害现有 Shell menu mode。建议新增一条 28–30 DIP 高的 icon-only row，左右各放一枚 20px 白色缩影，整行点击在 `fan/cascade` 间切换；当前模式通过黄色 1px 描边、底条或深色选中胶囊表示，未选图标白色 40–50% alpha。Qt 路径可提供 tooltip/accessibleName，原生 owner-draw item 保留不可见的本地化 item 文本供辅助技术识别。
+- 网络素材调查：Microsoft Fluent System Icons 官方列表包含 `Image Multiple`、`Image Stack`、`Slide Multiple`、`Stack`，并提供 plain SVG；仓库使用 MIT License，允许使用与修改但分发时要保留版权/许可声明。参考：[Fluent System Icons](https://github.com/microsoft/fluentui-system-icons)、[Regular icon list](https://raw.githubusercontent.com/microsoft/fluentui-system-icons/main/icons_regular.md)、[MIT License](https://raw.githubusercontent.com/microsoft/fluentui-system-icons/main/LICENSE)。
+- Google Material Symbols/Icons 也可作为备选，官方仓库提供 SVG，Apache-2.0 允许集成和再分发；其 20/24px 版本有专门像素网格，候选包括 `photo_library/collections/view_carousel`。但本项目是 Windows 原生托盘视觉，Fluent 的线宽、圆角和 Segoe 体系更一致，因此优先 Fluent。参考：[Google Material Design Icons](https://github.com/google/material-design-icons)。
+- 素材落地建议：先对比 Fluent `Image Stack 20 Regular`（fan）与 `Slide Multiple 20 Regular` 或 `Image Multiple 20 Regular`（cascade）。如果 20px 下区分仍不足，可复用 Fluent `Image` 卡片的原始路径做两种排列组合，而不手画新的轮廓。最终离线生成包含 16/20/24/32/40px 的两个多分辨率 `.ico`，图形保持白色透明底；Qt 用 `QIcon`，Win32 用 `LoadImageW/DrawIconEx`，避免运行时引入 QtSvg、GDI+ 或整套图标字体。资源预计只有数十 KB，并在第三方许可文档保留 Microsoft MIT notice。
+- 模式状态建议写入现有 `QSettings('DoseCtrlC', 'DoseCtrlC')` 的 `image_layout_mode`，默认 `fan`，避免升级后改变老用户外观。菜单增加 `image_layout_changed(str)`，两条菜单实现共享 `set_state(..., image_layout_mode)`；新反馈创建时读取当前模式，已经显示的反馈不强制中途换布局，避免菜单选择与活动动画竞争。
+- Phase 28 实施后，剪贴板图片预取上限独立为 4；`fan` 仍只显示 3 张，`cascade` 显示前 4 张。背景卡只缓存最终 120px pixmap，首图才保留 25 帧像素揭示缓存，避免为了新增模式把四张图片都生成完整 reveal 帧而放大复制瞬间的 CPU/内存开销。
+- `cascade` 采用 normal `+index*20` 与 right-docked `-index*20` 的锚点坐标；换算成整组左边界后等价于 normal `[0,20,40,60]`、right `[60,40,20,0]`。卡片按 4→1 绘制，首图始终最后绘制且不透明度 1.0；后层为 `0.78/0.58/0.42`。每层 progress 使用 0.06 的相位错峰与 smoothstep，端点精确且中途反向无需重建动画。
+- 菜单实际采用 Fluent `Image Multiple 24 Regular` 与 `Slide Multiple 24 Regular`。保留官方 SVG 作为来源证明，运行时只读取白色透明底、含 16/20/24/32/48/64px 的 ICO；Qt 回退菜单用 `QIcon`，Windows 原生菜单用 `LoadImageW/DrawIconEx`。随资源保存并打包 Microsoft MIT `LICENSE.txt`。
+- one-file 验证：PyInstaller 6.21.0 生成的 `DoesCtrlCWork.exe` 为 27,226,027 bytes；归档包含两枚 ICO 与 MIT 许可，且不含 `Qt6Svg`/`qsvg`。新增图标本体合计约 13.6KB，没有逆转此前打包瘦身策略。
+- Phase 28 自动化覆盖默认/非法模式、QSettings 同步、Qt/Win32 菜单信号、3/4/4+ 显示上限、轻量缓存、右侧端点反转、底边占位、150% DPI 横向尾部和既有动画回归；完整离屏结果 51/51 通过。未在本轮直接启动 GUI 成品，真实 Explorer 隐藏图标栏与 DWM 手感仍需人工验收。
 
 ## Technical Decisions
 | Decision | Rationale |

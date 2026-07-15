@@ -23,6 +23,8 @@ from ui.feedback_layout import (DOT_CX, DOT_CY, EDGE_DOCK_MARGIN,
                                 bottom_dock_dot_y, edge_dock_required,
                                 image_base_pos, mouse_to_window,
                                 visible_content_bounds, window_size)
+from ui.image_layout import (IMAGE_LAYOUT_CASCADE, cascade_layer_offset,
+                             image_display_limit, normalize_image_layout)
 from ui.text_style import TextStyle, TextStyleResolver
 
 
@@ -38,7 +40,8 @@ class FeedbackWidget(QWidget):
 
     def __init__(self, feedback_type, text="", images=None,
                  image_count=0, holding_mode=False, parent=None,
-                 ui_scale=1.0, cursor_offset=None):
+                 ui_scale=1.0, cursor_offset=None,
+                 image_layout_mode='fan'):
         super().__init__(parent)
         self._ui_scale = max(1.0, min(float(ui_scale), 1.5))
         self._cursor_offset = cursor_offset or (
@@ -49,13 +52,18 @@ class FeedbackWidget(QWidget):
         self._text = self._text_style.elide(text) if text else ''
         self._final_text_layout: Optional[QStaticText] = (
             self._text_style.static_layout(self._text) if self._text else None)
-        self._image_count = min(image_count, IMAGE_STACK['max_display'])
-        self._total_image_count = image_count
+        self._image_layout_mode = normalize_image_layout(image_layout_mode)
+        self._image_display_limit = image_display_limit(self._image_layout_mode)
+        requested_image_count = max(int(image_count or 0), len(images or []))
+        self._image_count = min(requested_image_count,
+                                self._image_display_limit)
+        self._total_image_count = requested_image_count
         self._holding_mode = holding_mode
         self._active = True
         self._images: List[QImage] = []
         self._main_image: Optional[QImage] = None
         self._main_image_cache: Optional[ImageRenderCache] = None
+        self._image_render_caches: List[Optional[ImageRenderCache]] = []
         self._stack_thumbnail_cache: List[Optional[QPixmap]] = []
         self._append_images(images)
         self._has_image = bool(self._images) or image_count > 0
@@ -165,7 +173,8 @@ class FeedbackWidget(QWidget):
             available = screen.availableGeometry()
             geometry = screen.geometry()
             normal_right, normal_bottom = visible_content_bounds(
-                self._target_width, self._has_image, self._image_count)
+                self._target_width, self._has_image, self._image_count,
+                image_layout_mode=self._image_layout_mode)
             normal_x, normal_y = mouse_to_window(
                 x, y, self._ui_scale, *self._cursor_offset, DOT_CY)
             normal_bottom_edge = normal_y + normal_bottom * self._ui_scale
@@ -192,7 +201,8 @@ class FeedbackWidget(QWidget):
 
         # This only occurs transiently while displays are reconfigured.
         normal_right, normal_bottom = visible_content_bounds(
-            self._target_width, self._has_image, self._image_count)
+            self._target_width, self._has_image, self._image_count,
+            image_layout_mode=self._image_layout_mode)
         normal_x, normal_y = mouse_to_window(
             x, y, self._ui_scale, *self._cursor_offset, DOT_CY)
         return {
@@ -265,11 +275,12 @@ class FeedbackWidget(QWidget):
         normal_y = context['normal_y']
         docked_x = context['right'] - margin - self.width()
 
-        dock_dot_cy = (bottom_dock_dot_y(self._image_count)
+        dock_dot_cy = (bottom_dock_dot_y(
+            self._image_count, self._image_layout_mode)
                        if self._has_image else DOT_CY)
         _, dock_visible_bottom = visible_content_bounds(
             self._target_width, self._has_image, self._image_count,
-            dock_dot_cy, self._has_image)
+            dock_dot_cy, self._has_image, self._image_layout_mode)
         docked_y = (context['effective_bottom'] - margin -
                     dock_visible_bottom * scale)
 
@@ -290,6 +301,8 @@ class FeedbackWidget(QWidget):
         if len(self._images) == before:
             return
         self._total_image_count = image_count
+        self._image_count = min(max(int(image_count or 0), len(self._images)),
+                                self._image_display_limit)
         self._has_image = True
         self._awaiting_images = False
         self._resize_to_content()
@@ -311,7 +324,7 @@ class FeedbackWidget(QWidget):
 
     def _append_images(self, images) -> None:
         known_keys = {image.cacheKey() for image in self._images}
-        for image in (images or [])[:IMAGE_STACK['max_display']]:
+        for image in (images or [])[:IMAGE_STACK['max_preload']]:
             if not isinstance(image, QImage) or image.isNull():
                 continue
             copy = image.copy()
@@ -322,8 +335,12 @@ class FeedbackWidget(QWidget):
         if self._images:
             self._main_image = self._images[0]
             self._main_image_cache = ImageRenderer.build_cache(self._main_image)
+            self._image_render_caches = [self._main_image_cache]
+            self._image_render_caches.extend(
+                ImageRenderer.build_cache(image, include_reveal=False)
+                for image in self._images[1:IMAGE_STACK['max_preload']])
             self._stack_thumbnail_cache = [None]
-            for image in self._images[1:IMAGE_STACK['max_display']]:
+            for image in self._images[1:IMAGE_STACK['max_preload']]:
                 scaled = image.scaled(ImageRenderer.IMAGE_BOX_SIZE,
                                       ImageRenderer.IMAGE_BOX_SIZE,
                                       Qt.KeepAspectRatioByExpanding,
@@ -639,7 +656,8 @@ class FeedbackWidget(QWidget):
                            if self._has_image else 0.0)
         direction = -1 if right_progress >= 0.5 else 1
         vertical_direction = -1 if bottom_progress >= 0.5 else 1
-        dock_dot_cy = (bottom_dock_dot_y(self._image_count)
+        dock_dot_cy = (bottom_dock_dot_y(
+            self._image_count, self._image_layout_mode)
                        if self._has_image else DOT_CY)
         dot_cy = DOT_CY + (dock_dot_cy - DOT_CY) * bottom_progress
         logical_width = self.width() / self._ui_scale
@@ -657,7 +675,11 @@ class FeedbackWidget(QWidget):
             image_x, image_y = image_base_pos(
                 dot_cx, dot_cy, self._target_width, direction,
                 bottom_progress >= 0.5, right_progress, bottom_progress)
-            if self._stack_progress > 0.01 and self._image_count >= 2:
+            if self._image_layout_mode == IMAGE_LAYOUT_CASCADE:
+                self._paint_cascade_images(
+                    painter, image_x, image_y, dot_cx, dot_cy,
+                    right_progress)
+            elif self._stack_progress > 0.01 and self._image_count >= 2:
                 for index in range(min(self._image_count - 1, 2) - 1, -1, -1):
                     thumbnail = (self._stack_thumbnail_cache[index + 1]
                                  if index + 1 < len(self._stack_thumbnail_cache) else None)
@@ -666,7 +688,29 @@ class FeedbackWidget(QWidget):
                                      self._stack_progress, self._images, thumbnail,
                                      direction, vertical_direction,
                                      right_progress, bottom_progress)
-            ImageRenderer.paint(painter, image_x, image_y, self._main_image,
-                                self._image_scramble_progress, self._vanish_ratio,
-                                dot_cx, dot_cy, self._main_image_cache)
+            if self._image_layout_mode != IMAGE_LAYOUT_CASCADE:
+                ImageRenderer.paint(
+                    painter, image_x, image_y, self._main_image,
+                    self._image_scramble_progress, self._vanish_ratio,
+                    dot_cx, dot_cy, self._main_image_cache)
         painter.end()
+
+    def _paint_cascade_images(self, painter, image_x, image_y,
+                              dot_cx, dot_cy, right_progress):
+        """Paint horizontal cards back-to-front; image zero stays topmost."""
+        count = max(1, self._image_count)
+        opacities = IMAGE_STACK['cascade_opacities']
+        for index in range(count - 1, -1, -1):
+            if index > 0 and self._stack_progress <= 0.01:
+                continue
+            offset_x = cascade_layer_offset(index, count, right_progress)
+            layer_opacity = float(opacities[min(index, len(opacities) - 1)])
+            if index > 0:
+                layer_opacity *= self._stack_progress
+            image = self._images[index] if index < len(self._images) else None
+            cache = (self._image_render_caches[index]
+                     if index < len(self._image_render_caches) else None)
+            ImageRenderer.paint(
+                painter, image_x + offset_x, image_y, image,
+                self._image_scramble_progress, self._vanish_ratio,
+                dot_cx, dot_cy, cache, layer_opacity)

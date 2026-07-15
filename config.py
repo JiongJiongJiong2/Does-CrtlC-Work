@@ -71,7 +71,9 @@ DOCK_TRANSITION = {
 
 # 多图堆叠参数
 IMAGE_STACK = {
-    'max_display': 3,           # 最多显示堆叠层数
+    'max_preload': 4,           # 剪贴板最多预取图片数（由具体布局决定展示 3 或 4 张）
+    'fan_max_display': 3,       # 原扇形堆叠保持最多 3 张
+    'cascade_max_display': 4,   # 横向层叠最多 4 张
     'show_real_thumbnails': True,  # 堆叠层是否显示真实缩略图（False=仅半透明圆角方块）
     'offset_x': 14,             # 每层 X 偏移（向右，需足够大以露出边缘）
     'offset_y': 14,             # 每层 Y 偏移（向下，需足够大以露出边缘）
@@ -81,6 +83,9 @@ IMAGE_STACK = {
     'placeholder_opacity': 0.6, # 占位框透明度（图片未加载时）
     'border_color': (255, 255, 255, 25),  # 堆叠层边框色
     'bg_color': (20, 20, 23, 240),        # 堆叠层背景色
+    'cascade_offset_x': 20,     # 横向层叠每张图片的水平错位
+    'cascade_opacities': (1.0, 0.78, 0.58, 0.42),
+    'cascade_stagger': 0.06,    # 右侧镜像切换时每层错峰进度
 }
 
 # 文本截断长度

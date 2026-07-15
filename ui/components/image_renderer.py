@@ -27,7 +27,8 @@ class ImageRenderer:
     REVEAL_FRAME_COUNT = 25
 
     @classmethod
-    def build_cache(cls, image: Optional[QImage]) -> Optional[ImageRenderCache]:
+    def build_cache(cls, image: Optional[QImage],
+                    include_reveal: bool = True) -> Optional[ImageRenderCache]:
         if image is None or image.isNull():
             return None
 
@@ -35,6 +36,8 @@ class ImageRenderer:
         final_image = image.scaled(size, size, Qt.KeepAspectRatioByExpanding,
                                    Qt.FastTransformation)
         final_pixmap = QPixmap.fromImage(final_image)
+        if not include_reveal:
+            return ImageRenderCache(image, final_pixmap, [final_pixmap])
         reveal_frames = []
         for index in range(cls.REVEAL_FRAME_COUNT):
             progress = index / (cls.REVEAL_FRAME_COUNT - 1)
@@ -56,11 +59,13 @@ class ImageRenderer:
     def paint(cls, painter: QPainter, base_x: float, base_y: float,
               main_image: Optional[QImage], scramble_progress: float,
               vanish_ratio: float, dot_cx: float, dot_cy: float,
-              cache: Optional[ImageRenderCache] = None) -> None:
+              cache: Optional[ImageRenderCache] = None,
+              layer_opacity: float = 1.0) -> None:
         base_size = cls.IMAGE_BOX_SIZE
         if main_image is None or main_image.isNull():
             painter.save()
-            painter.setOpacity(IMAGE_STACK.get('placeholder_opacity', 0.5))
+            painter.setOpacity(
+                IMAGE_STACK.get('placeholder_opacity', 0.5) * layer_opacity)
             painter.setPen(QPen(QColor(255, 255, 255, 20), 1))
             painter.setBrush(QColor(30, 30, 35, 200))
             painter.drawRoundedRect(int(base_x), int(base_y), base_size, base_size,
@@ -77,7 +82,7 @@ class ImageRenderer:
         draw_radius = max(2.0, cls.CORNER_RADIUS * vanish_ratio)
 
         painter.save()
-        painter.setOpacity(vanish_ratio)
+        painter.setOpacity(vanish_ratio * layer_opacity)
         painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
         painter.setBrush(QColor(17, 17, 17, 220))
         painter.drawRoundedRect(draw_x, draw_y, draw_size, draw_size,

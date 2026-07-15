@@ -14,6 +14,7 @@ from core.cursor_metrics import CursorMetrics
 from core.mouse_tracker import MouseTracker
 from core.clipboard_monitor import ClipboardMonitor
 from ui.feedback_widget import FeedbackWidget, FeedbackType
+from ui.image_layout import normalize_image_layout
 from ui.tray_menu import create_tray_menu
 
 
@@ -31,6 +32,8 @@ class ClipboardFXApp:
         self.silent_mode = not self._settings.value('feedback_enabled', True, type=bool)
         self._holding_mode = self._settings.value('holding_enabled', False, type=bool)
         self._language = self._settings.value('tray_language', 'zh', type=str)
+        self._image_layout_mode = normalize_image_layout(
+            self._settings.value('image_layout_mode', 'fan', type=str))
         
         # 创建系统托盘
         self._setup_tray()
@@ -72,6 +75,7 @@ class ClipboardFXApp:
         self.tray_menu.feedback_toggled.connect(self._set_feedback_enabled)
         self.tray_menu.holding_toggled.connect(self._set_holding_mode)
         self.tray_menu.language_toggled.connect(self._set_language)
+        self.tray_menu.image_layout_changed.connect(self._set_image_layout_mode)
         self.tray_menu.quit_requested.connect(self._quit)
         # Do not use QSystemTrayIcon's automatic context-menu path: on Windows
         # it activates the Qt top-level popup and retracts Explorer's hidden-
@@ -160,6 +164,7 @@ class ClipboardFXApp:
             holding_mode=is_holding,
             ui_scale=cursor_metrics.ui_scale,
             cursor_offset=(cursor_metrics.offset_x, cursor_metrics.offset_y),
+            image_layout_mode=getattr(self, '_image_layout_mode', 'fan'),
         )
         self._current_widget.animation_complete.connect(self._on_animation_complete)
         
@@ -210,12 +215,20 @@ class ClipboardFXApp:
         holding_text = '开' if self._holding_mode else '关'
         self.tray.setToolTip(
             f'Does CtrlC Work\n复制反馈：{feedback_text}\n等待 Ctrl+V：{holding_text}')
-        self.tray_menu.set_state(not self.silent_mode, self._holding_mode)
+        self.tray_menu.set_state(
+            not self.silent_mode, self._holding_mode,
+            getattr(self, '_image_layout_mode', 'fan'))
 
     def _set_language(self, language: str):
         self._language = language if language in ('zh', 'en') else 'zh'
         self._settings.setValue('tray_language', self._language)
         self.tray_menu.set_language(self._language)
+
+    def _set_image_layout_mode(self, mode: str):
+        """Persist the layout used by future copy-feedback instances."""
+        self._image_layout_mode = normalize_image_layout(mode)
+        self._settings.setValue('image_layout_mode', self._image_layout_mode)
+        self._update_tray_status()
 
     def _set_windows_app_id(self):
         """设置 Windows 任务栏显示标识"""

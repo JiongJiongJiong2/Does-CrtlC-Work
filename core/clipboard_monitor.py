@@ -279,7 +279,7 @@ class ClipboardMonitor(QObject):
         self._cancel_image_workers()
         if not (file_paths or data_uris or http_urls):
             return
-        remaining = max(0, IMAGE_STACK.get('max_display', 3) - len(images))
+        remaining = max(0, IMAGE_STACK.get('max_preload', 4) - len(images))
         if remaining:
             self._start_worker(request_id, http_urls, data_uris, file_paths, remaining, image_count)
 
