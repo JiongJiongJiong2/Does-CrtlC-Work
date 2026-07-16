@@ -16,6 +16,7 @@ from core.clipboard_monitor import ClipboardMonitor
 from ui.feedback_widget import FeedbackWidget, FeedbackType
 from ui.image_layout import normalize_image_layout
 from ui.tray_menu import create_tray_menu
+from ui.theme import ThemeController
 
 
 class ClipboardFXApp:
@@ -26,9 +27,10 @@ class ClipboardFXApp:
         self.app.setQuitOnLastWindowClosed(False)  # 关闭窗口不退出
         self.app.setApplicationName("Does CtrlC Work")
         self.app.setApplicationDisplayName("Does CtrlC Work")
-        self._set_windows_app_id()
-
         self._settings = QSettings('DoseCtrlC', 'DoseCtrlC')
+        self.theme_controller = ThemeController(self._settings, self.app)
+        self.theme_controller.theme_changed.connect(self._on_theme_changed)
+        self._set_windows_app_id()
         self.silent_mode = not self._settings.value('feedback_enabled', True, type=bool)
         self._holding_mode = self._settings.value('holding_enabled', False, type=bool)
         self._language = self._settings.value('tray_language', 'zh', type=str)
@@ -76,7 +78,11 @@ class ClipboardFXApp:
         self.tray_menu.holding_toggled.connect(self._set_holding_mode)
         self.tray_menu.language_toggled.connect(self._set_language)
         self.tray_menu.image_layout_changed.connect(self._set_image_layout_mode)
+        self.tray_menu.palette_changed.connect(self._set_palette)
         self.tray_menu.quit_requested.connect(self._quit)
+        if hasattr(self, 'theme_controller'):
+            self.tray_menu.set_palette(self.theme_controller.palette,
+                                       self.theme_controller.custom_color)
         # Do not use QSystemTrayIcon's automatic context-menu path: on Windows
         # it activates the Qt top-level popup and retracts Explorer's hidden-
         # icons flyout immediately. Both mouse entries are handled below.
@@ -118,6 +124,17 @@ class ClipboardFXApp:
         if self._current_widget and self._current_widget._active:
             self._current_widget.move_to_position(x, y)
             
+    def _set_palette(self, palette: str, custom_color: str = ''):
+        self.theme_controller.set_palette(palette, custom_color or None)
+        self.tray_menu.set_palette(self.theme_controller.palette,
+                                   self.theme_controller.custom_color)
+
+    def _on_theme_changed(self, palette: str):
+        """Refresh custom-painted surfaces after an in-app palette change."""
+        self.tray_menu.set_theme(palette)
+        if self._current_widget:
+            self._current_widget.update()
+
     def _on_copy_success(self, text: str, images=None, image_count: int = 0):
         """复制成功回调"""
         self._show_feedback(FeedbackType.COPY, text, images=images, image_count=image_count)

@@ -49,7 +49,11 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('config.py', '.')],
+    datas=[
+        ('config.py', '.'),
+        ('assets/image_layout/fluent_image_multiple.ico', 'assets/image_layout'),
+        ('assets/image_layout/fluent_slide_multiple.ico', 'assets/image_layout'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

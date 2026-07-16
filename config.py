@@ -81,6 +81,10 @@ IMAGE_STACK = {
     'opacity_layer1': 0.55,     # 第1层透明度
     'opacity_layer2': 0.5,     # 第2层透明度
     'placeholder_opacity': 0.6, # 占位框透明度（图片未加载时）
+    'placeholder_border_color': (255, 255, 255, 20),
+    'placeholder_bg_color': (30, 30, 35, 200),
+    'image_border_color': (255, 255, 255, 30),
+    'image_surface_color': (17, 17, 17, 220),
     'border_color': (255, 255, 255, 25),  # 堆叠层边框色
     'bg_color': (20, 20, 23, 240),        # 堆叠层背景色
     'cascade_offset_x': 24,     # 横向层叠每张图片的水平错位（略宽于原 20 DIP）

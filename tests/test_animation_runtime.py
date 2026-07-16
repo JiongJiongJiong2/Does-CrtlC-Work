@@ -26,6 +26,7 @@ from ui.windows_tray_menu import (
     ID_FEEDBACK,
     ID_HOLDING,
     ID_IMAGE_LAYOUT,
+    ID_IMAGE_LAYOUT_CASCADE,
     ID_LANGUAGE,
     ID_QUIT,
     REOPEN_COMMANDS,
@@ -236,7 +237,7 @@ class TrayAndHoldingTests(unittest.TestCase):
         menu._apply_command(ID_FEEDBACK)
         menu._apply_command(ID_HOLDING)
         menu._apply_command(ID_LANGUAGE)
-        menu._apply_command(ID_IMAGE_LAYOUT)
+        menu._apply_command(ID_IMAGE_LAYOUT_CASCADE)
         menu._apply_command(ID_QUIT)
         self.assertEqual(feedback, [False])
         self.assertEqual(holding, [True])

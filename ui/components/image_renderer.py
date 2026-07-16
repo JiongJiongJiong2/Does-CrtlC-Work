@@ -66,8 +66,9 @@ class ImageRenderer:
             painter.save()
             painter.setOpacity(
                 IMAGE_STACK.get('placeholder_opacity', 0.5) * layer_opacity)
-            painter.setPen(QPen(QColor(255, 255, 255, 20), 1))
-            painter.setBrush(QColor(30, 30, 35, 200))
+            painter.setPen(QPen(QColor(
+                *IMAGE_STACK['placeholder_border_color']), 1))
+            painter.setBrush(QColor(*IMAGE_STACK['placeholder_bg_color']))
             painter.drawRoundedRect(int(base_x), int(base_y), base_size, base_size,
                                     cls.CORNER_RADIUS, cls.CORNER_RADIUS)
             painter.restore()
@@ -83,8 +84,8 @@ class ImageRenderer:
 
         painter.save()
         painter.setOpacity(vanish_ratio * layer_opacity)
-        painter.setPen(QPen(QColor(255, 255, 255, 30), 1))
-        painter.setBrush(QColor(17, 17, 17, 220))
+        painter.setPen(QPen(QColor(*IMAGE_STACK['image_border_color']), 1))
+        painter.setBrush(QColor(*IMAGE_STACK['image_surface_color']))
         painter.drawRoundedRect(draw_x, draw_y, draw_size, draw_size,
                                 draw_radius, draw_radius)
         clip_path = QPainterPath()

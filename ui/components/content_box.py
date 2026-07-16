@@ -33,17 +33,36 @@ class ContentBox:
         # continuously would collapse it to zero length at 50%, causing a
         # visible flash. Instead, interpolate only the two fading edge alphas.
         gradient = QLinearGradient(box_x, box_y, box_x + box_width, box_y)
-        edge_alpha = int(217 * box_opacity)
+        red, green, blue, alpha = COLORS['box_bg']
+        edge_alpha = int(alpha * box_opacity)
         gradient.setColorAt(
-            0, QColor(0, 0, 0, int(edge_alpha * (1.0 - mirror_progress))))
-        gradient.setColorAt(0.2, QColor(0, 0, 0, edge_alpha))
-        gradient.setColorAt(0.8, QColor(0, 0, 0, int(217 * box_opacity)))
+            0, QColor(red, green, blue,
+                      int(edge_alpha * (1.0 - mirror_progress))))
+        gradient.setColorAt(0.2, QColor(red, green, blue, edge_alpha))
+        gradient.setColorAt(0.8, QColor(red, green, blue,
+                                        int(alpha * box_opacity)))
         gradient.setColorAt(
-            1, QColor(0, 0, 0, int(edge_alpha * mirror_progress)))
+            1, QColor(red, green, blue,
+                      int(edge_alpha * mirror_progress)))
         painter.setBrush(gradient)
         painter.setPen(Qt.NoPen)
         painter.drawRect(int(box_x), int(box_y), int(box_width), int(box_height))
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        # A two-sided, very low-alpha overlay softens the horizontal top and
+        # bottom edges without changing the crisp yellow anchor or animation
+        # geometry. It reads as a restrained glass highlight, not a shadow.
+        edge = QLinearGradient(box_x, box_y, box_x, box_y + box_height)
+        is_light = (red + green + blue) > 382
+        highlight = QColor(255, 255, 255, 32 if is_light else 18)
+        shadow = QColor(70, 70, 70, 20) if is_light else QColor(0, 0, 0, 34)
+        transparent = QColor(0, 0, 0, 0)
+        edge.setColorAt(0.0, highlight)
+        edge.setColorAt(0.10, transparent)
+        edge.setColorAt(0.90, transparent)
+        edge.setColorAt(1.0, shadow)
+        painter.setBrush(edge)
+        painter.setPen(Qt.NoPen)
+        painter.drawRect(int(box_x), int(box_y), int(box_width), int(box_height))
         if box_opacity > 0:
             painter.setPen(QPen(QColor(COLORS['border']), 2))
             # In mirrored mode the box grows left, but the vertical yellow

@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
+from PySide6.QtCore import QRect
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
@@ -300,6 +301,23 @@ class ScaledFeedbackTests(unittest.TestCase):
         self.assertLess(widget.x(), max(context['normal_x'], docked_x))
         self.assertGreater(widget.y(), min(context['normal_y'], docked_y))
         self.assertLess(widget.y(), max(context['normal_y'], docked_y))
+
+    def test_bottom_taskbar_boundary_is_kept_while_dock_unwinds(self):
+        class Screen:
+            def availableGeometry(self):
+                return QRect(0, 0, 1920, 1080)
+
+            def geometry(self):
+                return QRect(0, 0, 1920, 1080)
+
+        widget = FeedbackWidget(FeedbackType.COPY, text='copy')
+        widget._dock_bottom = False
+        widget._dock_bottom_progress = 0.5
+        with patch('ui.feedback_widget.QGuiApplication.screenAt',
+                   return_value=Screen()), patch.object(
+                       TaskbarBoundary, 'effective_bottom', return_value=1032):
+            context = widget._build_position_context(900, 850)
+        self.assertEqual(context['effective_bottom'], 1032.0)
 
     def test_reversing_dock_transition_starts_from_current_progress(self):
         widget = FeedbackWidget(FeedbackType.COPY, text='copy')

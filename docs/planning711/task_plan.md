@@ -255,6 +255,54 @@ Phase 29 (菜单持久交互与 cascade 视觉修正；实现与自动化完成�
 - [ ] 在真实 Windows Explorer 隐藏图标栏入口确认开关重进的主观闪烁、文字选择器点击和无边框观感
 - **Status:** complete (实现、51 项自动化、one-file 构建与归档检查完成；待真实 Windows 视觉验收)
 
+### Phase 30: 托盘菜单信息架构与原生菜单闪烁修复决策
+- [x] 审查 Windows 原生 owner-draw 菜单与 Qt 备用菜单的实际控件、对齐、间距和点击语义
+- [x] 确认现有“扇形 / 层叠”在 Windows 路径中整行只有一个命令热区，视觉上却伪装成两个独立按钮，容易误导且显得拥挤
+- [x] 确认闪烁根因：每次选择 `TPM_RETURNCMD` 项都会结束一次 `TrackPopupMenuEx`；当前循环只能重开新的 `#32768` 菜单，`TPM_NOANIMATION` 不能保留同一窗口
+- [ ] 方案 A（推荐的紧凑方案）：将图片布局改为一行“图片布局    当前值  ›”，整行点击切换；移除假分段按钮和图标缩影
+- [x] 移除 Quit 上方装饰分隔线；标题、普通选项和 Quit 统一为 14 DIP 左对齐；Windows 原生菜单从 125 DIP 收紧到 113 DIP，Qt 备用面板离屏高度为 101 DIP
+- [ ] 若“开关点击后菜单原地更新且绝不闪烁”是硬要求，迁移为真正的设置 flyout（可交互 popup），并单独回归隐藏图标栏共存；不能靠调整 `TrackPopupMenuEx` flag 达成
+- [ ] 在真实 Windows 隐藏图标栏入口测试最终方案：静置、外部点击、语言/开关/布局切换、Esc、100%/150% DPI
+- **Status:** in_progress (紧凑视觉重排已完成；等待确认采用紧凑单值行，或投入独立 flyout 迁移)
+
+### Phase 31: 图片布局子菜单与系统主题适配方案
+- [x] 审查当前两条菜单实现：Windows 为 owner-draw `HMENU`，Qt 仅为备用 `QMenu`；二者均为固定深灰色令牌，Windows 图片布局项目前仅是一个命令热区
+- [x] 调查 Windows 官方主题、颜色和 backdrop API，以及 Qt/PySide6 的主题变更能力与版本兼容性
+- [x] 设计主菜单中的 SVG 图标 + 文案 + 悬停子菜单：两种字体/展示方式、与主菜单比例一致的圆角、离开父/子区域后的关闭语义与键盘可访问性
+- [x] 评估浅色模式的配色令牌、透明度和磨砂边界：菜单保持实色主题；毛玻璃仅评估文字内容框和图片占位/堆叠底板，不涉及原生 `HMENU`
+- [x] 给出最小可实施范围、风险、真实 Windows 验收矩阵与是否需要改变原生菜单架构的结论
+- [x] 实现 Windows owner-draw 图片布局父项、两个原生子项、16 DIP 既有 Fluent ICO、根/子 10/8 DIP 圆角与 Quit 后 3 DIP 无 hover 留白
+- [x] 实现 Qt 备用路径的单行图标入口/子菜单，以及 PyInstaller 对两枚 ICO 的收集
+- [x] 实现 Qt `colorSchemeChanged` 驱动的深浅主题令牌；覆盖托盘菜单、内容框、图片占位和图片/堆叠底板
+- [x] 完成离屏主题切换、原生菜单创建、静态编译和 diff 检查
+- [ ] 在真实 Windows 托盘与隐藏图标栏入口验收：子菜单 hover、左右边界翻转、模式选择后的刷新、Quit 视觉位置、深浅主题切换和反馈表面可读性
+- **Status:** in_progress (实现与自动化检查完成；待真实 Windows 视觉/交互验收)
+
+### Phase 32: 可选配色与底边界回弹修复
+- [ ] 将系统自动主题改为用户持久化选择：经典深色、浅色玻璃、和自定义表面色；自定义色自动推导文本/hover/图片表面以保证可读性
+- [ ] 为托盘菜单新增“配色”父项、三项原生/Qt 子菜单，并将“自定义”接入 Windows 原生颜色选择盘而非新依赖
+- [ ] 让反馈内容框、图片占位和堆叠底板读取用户选择；菜单与子菜单保持实色且随选择同步
+- [ ] 诊断任务栏已升起时，鼠标自屏幕底边向上移动导致内容框先回到底部再追上的状态/坐标竞争
+- [ ] 以最小改动修复边界回弹，并添加离屏/纯逻辑回归覆盖
+- **Status:** in_progress (用户于 2026-07-16 提出并要求开始实施)
+
+### Phase 32 implementation update (2026-07-16)
+
+- [x] Replaced system-following theme logic with persisted app palette choices: Classic, Light glass, and Custom.
+- [x] Added a native/Qt `Colour` submenu; `Custom...` opens the platform colour picker and derives contrast-safe text, hover, content-box, placeholder, and image-stack tokens.
+- [x] Added a subtle top/bottom content-box gradient softening layer without changing the feedback anchor or layout dimensions.
+- [x] Fixed the raised-taskbar rebound: retain the taskbar boundary until bottom-dock progress reaches zero, avoiding the screen-bottom anchor snap.
+- [x] Added an offscreen regression test for the taskbar-boundary unwind path; real Explorer visual acceptance remains pending.
+
+### Phase 32 detail adjustment (2026-07-16)
+
+- [x] Replaced the native layout-row glyph with the alternate bundled `fluent_slide_multiple.ico` for more reliable Win32 rendering.
+- [x] Removed redundant trailing arrows from layout and colour rows in both native and Qt fallback menus.
+
+### Phase 32 icon transparency follow-up (2026-07-16)
+
+- [x] Removed the extra light rounded tile behind the native image-layout icon so the ICO transparency reveals the menu surface directly.
+
 ## Key Questions
 1. TMP 原型与当前动画在状态机、帧时序、缓动、合成方式上分别差在哪里？
 2. 当前实现检测的是 Ctrl+C 按键、选中文本，还是系统剪贴板实际变化？

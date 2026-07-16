@@ -166,6 +166,23 @@
 |----------|-----------|
 | Phase 17 使用公开只读 AppBar API 与双速时钟 | 不改变系统设置，在不重写 QWidget 渲染循环的前提下处理任务栏动画和高刷跟随 |
 
+## Phase 32 Findings (2026-07-16)
+
+- The taskbar rebound was a boundary-source discontinuity, not low FPS: the lower-pointer probe used the raised taskbar top, then switched to the full-screen bottom while the bottom-dock exit animation was still running.
+- Retaining the taskbar boundary until bottom-dock progress reaches zero keeps the interpolation continuous without another timer or polling path.
+- App-owned palette selection is more predictable than system-scheme following here. A chosen surface can derive contrast-safe foreground, hover and image-layer tokens, while the yellow copy-state colour stays semantic.
+- Native popup submenus preserve Explorer-compatible hover/keyboard behaviour; `QColorDialog` provides the custom third-level picker without a new dependency.
+- A short low-alpha vertical gradient is enough to soften the content-box top/bottom edge. A blur would cost more and reduce text-edge clarity.
+
+## Phase 32 UI detail update (2026-07-16)
+
+- The native parent-row arrow was custom-drawn and provided no useful affordance after the submenu had already been made discoverable by hover; it was removed together with the Qt fallback arrow.
+- The alternate bundled slide/multiple ICO is now used for the parent layout row, while the selected Fan/Cascade value continues to communicate the active mode.
+
+## Phase 32 icon transparency follow-up (2026-07-16)
+
+- The visible icon background was not part of the ICO; it was the owner-draw row's manually painted `#e5e5e5` rounded tile. Removing that tile preserves the icon's alpha and keeps the menu surface continuous.
+
 ## Issues Encountered
 | Issue | Resolution |
 |-------|------------|
@@ -177,6 +194,33 @@
 - `TMP`（用户说明为 Google AI Studio 的动画原型）
 
 ## Visual/Browser Findings
+
+### 2026-07-15: Tray menu visual and lifecycle review
+- Windows 实际路径是 owner-draw `HMENU`。`ImageLayoutSelector` 的 Qt 备用实现有两个真实按钮，但 Windows 路径将“扇形 / 层叠”绘制在同一个 `ID_IMAGE_LAYOUT` 菜单项内；两段文字不具备各自的命中区域，当前设计的可供性不准确。
+- Windows 的 `TrackPopupMenuEx` 会跟踪一轮快捷菜单选择；带 `TPM_RETURNCMD` 时，在用户选择后返回命令 ID，取消则返回 0。项目为保持菜单可见而在 `REOPEN_COMMANDS` 中再次调用该 API，这必然销毁/重建一次原生 `#32768` 菜单窗口。
+- `TPM_NOANIMATION` 的官方语义只是“菜单无动画显示”，不能把一次命令选择变成原窗口内的控件状态更新。因此当前闪烁是 HMENU 命令模型与“持久设置 flyout”需求的边界，不是 Qt/GDI 绘制颜色或圆角的 bug。
+- 建议的低成本视觉方案：以左侧“图片布局”标签和右侧当前值（扇形 / 层叠）加一个轻量箭头组成单一整行点击目标；避免继续使用两个看似独立、实际不可分别点击的文字或缩略图按钮。若要两个值直接点选，应改为真正子菜单或独立 flyout。
+- Quit 分隔线已从原生和 Qt 路径移除；标题、开关标签与 Quit 统一为 14 DIP 左对齐。原生菜单高度由 125 DIP 降为 113 DIP；Qt 备用面板离屏构建高度为 101 DIP，固定展示宽度仍为 210 DIP。
+
+### 2026-07-16: Menu theme and image-layout submenu baseline
+- 当前 Windows 主路径使用 owner-draw `HMENU`：背景刷固定为 `#252525`，普通/hover/文字/开关颜色也写死在 GDI 绘制函数内；Qt 备用面板同样在样式表中固定为深灰色。两处均没有主题令牌或系统主题变更订阅。
+- 图片布局目前在 Windows 是单个 `ID_IMAGE_LAYOUT` 命令项，只在行内画出两个文字状态；Qt 备用实现才有两个真实按钮。因此“主项 + 悬停子窗口”的交互需要同时设计 native HMENU 的子菜单和 Qt 备用的 popup/子菜单，而不是只替换一张 SVG。
+- 当前 owner-draw 菜单的 Quit 是最后一个 22 DIP 行。移除分隔线后视觉底边距离只来自菜单自身圆角与行内字体居中；后续应优先增加 Quit 行的上方留白或缩小其 hover 热区，而非把整个菜单重新加高。
+- 本机 PySide6 为 6.11.1，已支持 `QGuiApplication.styleHints().colorScheme()` 与 `colorSchemeChanged`（Qt 6.5 起）；可用其作为“跟随系统”唯一来源，并处理 palette-change 以重建应用自定义颜色，避免读写注册表。
+- Microsoft `UISettings` 也公开了颜色值/透明效果与变化事件；但为保持此小项目无新 WinRT 依赖，优先采用已随 PySide6 带来的 Qt 主题信号。若 Qt 返回 `Unknown`，回退到当前深色令牌。
+- Windows 11 Build 22621+ 的 `DWMSBT_TRANSIENTWINDOW` 是官方的 transient-window Desktop Acrylic backdrop；适合 flyout/菜单类临时表面。它只能施加到应用拥有的窗口，当前 HMENU 的 GDI owner-draw 背景刷会覆盖该效果，不能作为原生菜单的可靠磨砂实现。
+- 打包规格显式排除了 QtSvg/qsvg，且当前 `assets/image_layout/` 只有先前 Fluent SVG 源和已转换的 ICO。若菜单复用“之前的 SVG”外观，应把对应的 16/20/24 DIP ICO 作为约 20 KiB 资源打包并由 Win32/Qt 载入，而不是重新引入 QtSvg 运行时依赖。
+- 推荐交互：主菜单仅显示一个 26 DIP 行（16 DIP Fluent 图标、`图片布局` 文案、当前值和 `›`）；将两个布局作为真正的 `HMENU` 子菜单项。Windows 会按系统的 menu-show delay 在 hover 时打开子菜单、在指针离开父/子菜单时关闭，并支持右/左方向键；不增加自定义 hover timer 或第二个顶层 QWidget。现有 `EVENT_SYSTEM_MENUPOPUPSTART` hook 可对根菜单和子菜单分别施加圆角；子菜单建议 8 DIP，主菜单保持 10 DIP。
+- Quit 视觉修正应使用无装饰的底部安全留白：Qt 面板把底部 margin 从 4 调至 6 DIP；native HMENU 在 Quit 后增加 3 DIP 的 disabled owner-draw 空白项（只绘制背景、没有横线和 hover）。这样锚定在托盘底部时 Quit 会向上移动而不是贴边。
+- 主题最小范围：新增 `ThemePalette`/`ThemeController`，深色令牌保持当前颜色；浅色令牌为暖白半透明内容框、深色文字、浅灰 hover/图片占位面、低对比描边，黄色仍保留为产品的复制状态色但降低明度以保证浅底可读。菜单、文字框、图片占位/堆叠层都从同一令牌读取；不跟随系统 accent color，避免改变复制/粘贴/错误的语义颜色。
+- 用户明确毛玻璃只应用于鼠标旁文字内容框与图片占位/堆叠底板，托盘菜单保持实色主题。这样不触及原生 HMENU 的合成限制，也不会影响隐藏图标栏共存。
+- 该范围内“类似磨砂”第一阶段应使用透明度和浅色 tint：内容框从黑色 alpha 渐变改为暖白 alpha 渐变，图片占位/底板改为半透明白灰与低对比灰边；不承诺真实背景模糊。真实 Acrylic 只在未来把反馈窗改为独立、可用 DWM backdrop 的圆角窗口时评估，并必须在系统不支持或关闭透明效果时回退到这些 tint 令牌。
+
+### 2026-07-16: Phase 31 implementation findings
+- Windows 路径现在以 owner-draw `MF_POPUP` 父项承载图片布局：父项经 `MENUITEMINFO.dwItemData/wID` 映射到稳定绘制 ID，子项使用 `ID_IMAGE_LAYOUT_FAN/CASCADE`。这保留了系统原生 hover、方向键和靠近屏幕边缘时的翻转；根/子 `#32768` 菜单通过现有 WinEvent hook 按 10/8 DIP 施加圆角。
+- 先前 SVG 是 `#212121` 深色线稿，不适合直接放在深灰菜单。实现将已转换 ICO 放在浅灰 17 DIP 小底板内，保证深浅主题中都可读；spec 只收集两枚约 20 KiB ICO，仍不引入 QtSvg/qsvg。
+- `ThemeController` 只使用 Qt 6.11.1 的 `colorSchemeChanged`，不读写注册表；它原地更新现有 `COLORS`/`IMAGE_STACK` 字典，故静态 painter import 不需要重建。浅色内容框为 `(250,250,250,220)`，图片占位/底板使用约 214--222 alpha 的白灰 tint；深色值恢复原来的黑/深灰。
+- 验证：offscreen 环境中浅/深主题切换断言通过；Win32 菜单及子菜单可创建并释放；`python -m compileall -q config.py main.py ui` 与 `git diff --check` 通过。真实 Explorer 入口的 hover/视觉仍需手工验收。
 - 待检查本地原型资源后补充。
 
 ### Phase 29 findings

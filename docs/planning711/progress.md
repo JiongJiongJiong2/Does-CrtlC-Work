@@ -50,6 +50,60 @@
 | What have I learned? | 见 findings.md |
 | What have I done? | 完成代码/构建/架构审查并产出 PROJECT_REVIEW.md；未修改产品代码 |
 
+## Session: 2026-07-15
+
+### Phase 31: Image-layout submenu and system-theme research
+- **Status:** in progress; implementation started on 2026-07-16.
+- 已建立研究范围：SVG + 文案的图片布局主项、悬停子菜单的圆角/关闭语义，以及深浅主题与 Windows backdrop 的可行性必须分别评估 Windows owner-draw `HMENU` 和 Qt 备用路径。
+- 本机为 PySide6 6.11.1，确认具备 Qt 6.5+ 的 `QStyleHints.colorScheme` / `colorSchemeChanged`。该方案不需要触碰注册表，适合作为主题变化入口；Windows 原生菜单在每次打开时读取当前令牌，活动反馈窗口通过 theme-change 信号重绘。
+- 官方资料确认 Windows 11 22621+ 对 transient window 提供 Desktop Acrylic 类型的 `DWMSBT_TRANSIENTWINDOW`；但当前 `HMENU` 是 GDI owner-draw，固定不透明背景刷会遮蔽 backdrop，不能把“真实毛玻璃”承诺给该路径。已记录为需要独立 flyout 才能可靠提供的可选增强。
+- **Plan completed:** 主菜单改为 16 DIP 既有 Fluent 图标 + “图片布局”文案 + 当前值/箭头；使用真正 HMENU 子菜单承载“扇形/层叠”，由系统处理 hover、离开关闭和方向键，主/子圆角分别为 10/8 DIP。既有 SVG 仅作为设计源，运行时打包转换后的 ICO，不恢复 QtSvg。
+- **Theme decision (clarified):** 菜单只跟随深浅色实色令牌；毛玻璃视觉仅用于鼠标旁文字框、图片占位和堆叠底板。第一阶段采用跨版本稳定的半透明 tint；真实 Acrylic 不纳入本轮基础实现，未来若独立反馈窗可安全使用 DWM backdrop，再按系统支持状态回退。
+- **Quit adjustment:** Qt 底部内边距增加至 6 DIP；原生 HMENU 在 Quit 后增加 3 DIP 无 hover 的背景留白，使其在托盘底部锚定时上移但没有分隔线。
+- **Implementation started:** 用户确认开始执行图片布局子菜单、Quit 底部安全留白以及系统深浅主题/反馈表面 tint。
+- **Implemented:** 新增 `ui/theme.py`。Qt `QStyleHints.colorSchemeChanged` 现在驱动菜单实色主题与反馈绘制令牌；深色复刻原搭配，浅色为暖白/白灰半透明内容表面。`ContentBox`、`ImageRenderer` 和 `StackLayer` 所依赖的字典均随主题更新。
+- **Implemented:** Windows 菜单的图片布局改为 16 DIP ICO + 文案/当前值/箭头父项，并使用 `MF_POPUP` 的扇形/层叠子菜单；子菜单从现有 WinEvent hook 获得较小 8 DIP 圆角。Qt 备用路径也改为单行图标入口与圆角子菜单。spec 仅新增两枚转换后的 ICO。
+- **Implemented:** 原生 Quit 后追加 3 DIP 无 hover 背景留白，Qt 备用面板底边距为 6 DIP；不恢复任何横线。
+- **Verification:** `theme-switch-ok`、`native-submenu-ok`、`python -m compileall -q config.py main.py ui`、`git diff --check` 均通过。仍待用户在真实托盘/隐藏图标栏入口进行视觉与 hover 验收。
+- **Build note:** 运行 `pyinstaller DoesCtrlCWork.spec --noconfirm` 用于确认新增 ICO 收集时，在动态库扫描阶段超过 120 秒工具时限而被终止；尚未得到成功或失败的最终构建结论。本轮不重复相同长构建，保留为后续单独验证项。
+
+### Phase 32: Configurable palette and bottom-boundary rebound
+- **Status:** in progress; user requested implementation on 2026-07-16.
+- 新需求取代自动跟随系统主题：菜单需要“经典深色 / 浅色玻璃 / 自定义”三级配色入口，所有反馈表面使用同一选择；同时调查任务栏已升起时自底边向上移动出现的内容框回弹。
+
+### Phase 30: Tray menu information architecture and native lifecycle review
+- **Status:** in progress; the compact layout pass is complete, while the image-layout interaction and no-flash architecture decision remain open.
+- 用户反馈图片布局选择器视觉不协调、Quit 位置不自然，并观察到开关和其他状态项选择后整个菜单闪烁。
+- 代码审查确认：原生菜单当前为 `TrackPopupMenuEx(... TPM_RETURNCMD | TPM_NOANIMATION ...)`，命令返回后通过 `while command in REOPEN_COMMANDS` 重新进入菜单。任何状态命令都会结束一次原生菜单会话；`TPM_NOANIMATION` 仅关闭系统菜单动画，不能避免原生窗口销毁与重建。
+- 已将后续执行拆分为两层：先做无分隔线、14 DIP 左对齐、约 100 DIP 高的紧凑视觉重排，并把图片布局改成语义真实的一行当前值；若必须“点击后原地更新且完全无闪烁”，再单独迁移为可交互 flyout，并回归 Windows 隐藏图标栏的保持语义。
+- **Implemented:** 已在 `ui/windows_tray_menu.py` 与 `ui/tray_menu.py` 移除 Quit 上方装饰线；标题、标签与 Quit 统一为 14 DIP 左边界。Windows 原生各行高度调整为 23/21/21/26/22 DIP（总计 113 DIP）；Qt 备用面板上下 margin 改为 4 DIP、行间距改为 0，离屏高度为 101 DIP。
+- **Verification:** Qt offscreen 构建成功（固定面板宽度 210 DIP），`python -m compileall -q ui` 与 `git diff --check` 通过。
+
+## Session: 2026-07-16 — Phase 32 palette and boundary continuity
+
+### Completed
+
+- Replaced `colorSchemeChanged` system following with persisted `QSettings` palette selection (`classic`, `light`, `custom`).
+- Added the Colour submenu and platform custom colour dialog to both the Win32 owner-draw menu and the Qt fallback menu.
+- Applied derived palette tokens to menu, feedback box, image placeholders, and image-stack surfaces; added subtle vertical edge softening to the content box.
+- Fixed bottom-dock/taskbar boundary continuity and added a focused offscreen regression test.
+- Verified with `python -m unittest discover -s tests -v`: 52 tests passed; `git diff --check` passed.
+
+### Remaining manual acceptance
+
+- Verify the native Explorer tray submenu, custom picker and raised/auto-hide taskbar movement on a real Windows desktop.
+
+### Follow-up UI polish (2026-07-16)
+
+- Switched the native layout parent row to the alternate `fluent_slide_multiple.ico` asset.
+- Removed redundant layout/colour arrows from native and Qt menu presentations.
+- Regression suite remains green: 52 tests passed.
+
+### Icon transparency follow-up (2026-07-16)
+
+- Removed the native layout icon's manually painted background tile; the icon now renders directly against the transparent/solid menu surface.
+- Regression suite remains green: 52 tests passed.
+
 ## Session: 2026-07-12
 
 ### Phase 6: P0–P2 动画与运行时修复

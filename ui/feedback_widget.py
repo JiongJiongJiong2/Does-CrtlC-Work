@@ -179,7 +179,14 @@ class FeedbackWidget(QWidget):
                 x, y, self._ui_scale, *self._cursor_offset, DOT_CY)
             normal_bottom_edge = normal_y + normal_bottom * self._ui_scale
             screen_bottom = geometry.y() + geometry.height()
-            if (normal_bottom_edge > available.y() + available.height() -
+            # Keep using the raised taskbar edge while a bottom dock is
+            # unwinding. Otherwise the old 96px probe window can switch the
+            # boundary from taskbar-top back to screen-bottom mid-transition,
+            # visibly snapping the content down before it follows the cursor.
+            taskbar_boundary_active = (
+                self._dock_bottom or self._dock_bottom_progress > 0.01)
+            if (taskbar_boundary_active or
+                    normal_bottom_edge > available.y() + available.height() -
                     EDGE_DOCK_MARGIN * self._ui_scale or
                     y > screen_bottom - 96 * self._ui_scale):
                 effective_bottom = TaskbarBoundary.effective_bottom(
