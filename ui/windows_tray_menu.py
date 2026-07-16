@@ -1,9 +1,7 @@
 """Owner-drawn Win32 tray menu with a real native popup-menu loop."""
 
 import ctypes
-import sys
 from ctypes import wintypes
-from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
@@ -31,9 +29,6 @@ MIM_STYLE = 0x00000010
 MNS_NOCHECK = 0x80000000
 MIIM_DATA = 0x00000020
 MIIM_ID = 0x00000002
-IMAGE_ICON = 1
-LR_LOADFROMFILE = 0x0010
-DI_NORMAL = 0x0003
 DT_LEFT = 0x0000
 DT_RIGHT = 0x0002
 DT_VCENTER = 0x0004
@@ -61,7 +56,7 @@ ID_PALETTE_LIGHT = 11
 ID_PALETTE_CUSTOM = 12
 REOPEN_COMMANDS = (ID_LANGUAGE, ID_FEEDBACK, ID_HOLDING,
                    ID_IMAGE_LAYOUT_FAN, ID_IMAGE_LAYOUT_CASCADE,
-                   ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT, ID_PALETTE_CUSTOM)
+                   ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT)
 
 WinEventProc = ctypes.WINFUNCTYPE(
     None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, wintypes.LONG,
@@ -192,7 +187,7 @@ class WindowsNativeTrayMenu(QWidget):
         self._title_font = None
         self._menu_window_hook = None
         self._menu_window_callback = None
-        self._layout_icon = None
+        self._icon_font = None
         self._palette_name = 'classic'
         self._custom_color = '#52677f'
         self._configure_win32()
@@ -243,15 +238,6 @@ class WindowsNativeTrayMenu(QWidget):
         self._user32.DrawTextW.argtypes = [
             wintypes.HDC, wintypes.LPCWSTR, ctypes.c_int,
             ctypes.POINTER(wintypes.RECT), wintypes.UINT]
-        self._user32.LoadImageW.restype = wintypes.HANDLE
-        self._user32.LoadImageW.argtypes = [
-            wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
-            ctypes.c_int, ctypes.c_int, wintypes.UINT]
-        self._user32.DrawIconEx.argtypes = [
-            wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.HANDLE,
-            ctypes.c_int, ctypes.c_int, wintypes.UINT, wintypes.HBRUSH,
-            wintypes.UINT]
-        self._user32.DestroyIcon.argtypes = [wintypes.HANDLE]
         self._gdi32.CreateSolidBrush.restype = wintypes.HBRUSH
         self._gdi32.CreateSolidBrush.argtypes = [wintypes.COLORREF]
         self._gdi32.CreatePen.restype = wintypes.HPEN
@@ -336,7 +322,6 @@ class WindowsNativeTrayMenu(QWidget):
         hwnd = wintypes.HWND(int(self.winId()))
         self._dpi = int(self._user32.GetDpiForWindow(hwnd) or 96)
         self._create_fonts()
-        self._load_layout_icon()
         menu, background_brush = self._create_menu()
         if not menu:
             self._delete_fonts()
@@ -366,7 +351,6 @@ class WindowsNativeTrayMenu(QWidget):
             self._menu_open = False
             self._user32.DestroyMenu(menu)
             self._gdi32.DeleteObject(background_brush)
-            self._delete_layout_icon()
             self._delete_fonts()
             super().hide()
         self._apply_command(int(command or 0))
@@ -512,8 +496,6 @@ class WindowsNativeTrayMenu(QWidget):
             self._image_layout_mode = (
                 IMAGE_LAYOUT_FAN if command == ID_IMAGE_LAYOUT_FAN
                 else IMAGE_LAYOUT_CASCADE)
-            if self._layout_icon:
-                self._load_layout_icon()
             self.image_layout_changed.emit(self._image_layout_mode)
         elif command in (ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT):
             self._palette_name = (
@@ -521,7 +503,7 @@ class WindowsNativeTrayMenu(QWidget):
             self.palette_changed.emit(self._palette_name, '')
         elif command == ID_PALETTE_CUSTOM:
             color = QColorDialog.getColor(
-                QColor(self._custom_color), None,
+                QColor(self._custom_color), self,
                 'Choose Dose Ctrl+C colour')
             if color.isValid():
                 self._palette_name = 'custom'
@@ -609,13 +591,10 @@ class WindowsNativeTrayMenu(QWidget):
 
     def _draw_image_layout_item(self, hdc, row, text):
         colors = tray_colors()
-        icon_size = self._px(13)
-        icon_left = row.left + self._px(14)
-        icon_top = row.top + (row.bottom - row.top - icon_size) // 2
-        if self._layout_icon:
-            self._user32.DrawIconEx(hdc, icon_left, icon_top,
-                                    self._layout_icon, icon_size, icon_size,
-                                    0, None, DI_NORMAL)
+        # PhotoCollection is a Windows Fluent system glyph. Drawing it as
+        # text lets the same source follow the current menu foreground.
+        self._draw_text(hdc, '\ue7aa', row, colors.title, self._icon_font,
+                        DT_LEFT, left=13, right=180)
         self._draw_text(hdc, text['layout'], row, colors.text,
                         self._normal_font, DT_LEFT, left=38, right=76)
         value = ('扇形' if self._language == 'zh' else 'Fan')
@@ -633,11 +612,11 @@ class WindowsNativeTrayMenu(QWidget):
             label = 'Fan' if mode == IMAGE_LAYOUT_FAN else 'Cascade'
         active = mode == self._image_layout_mode
         self._draw_text(hdc, label, row,
-                        '#c98f00' if active else colors.text,
+                        colors.title if active else colors.text,
                         self._title_font if active else self._normal_font,
                         DT_LEFT, left=12, right=28)
         if active:
-            self._draw_text(hdc, '•', row, '#c98f00', self._title_font,
+            self._draw_text(hdc, '•', row, colors.title, self._title_font,
                             DT_RIGHT, left=82, right=12)
 
     def _draw_switch(self, hdc, row, checked):
@@ -679,11 +658,11 @@ class WindowsNativeTrayMenu(QWidget):
         active = palette == self._palette_name
         colors = tray_colors()
         self._draw_text(hdc, en if self._language == 'en' else zh, row,
-                        '#c98f00' if active else colors.text,
+                        colors.title if active else colors.text,
                         self._title_font if active else self._normal_font,
                         DT_LEFT, left=12, right=28)
         if active:
-            self._draw_text(hdc, '*', row, '#c98f00', self._title_font,
+            self._draw_text(hdc, '*', row, colors.title, self._title_font,
                             DT_RIGHT, left=82, right=12)
 
     def _draw_text(self, hdc, text, row, color, font, alignment,
@@ -726,38 +705,23 @@ class WindowsNativeTrayMenu(QWidget):
         self._gdi32.DeleteObject(brush)
         self._gdi32.DeleteObject(pen)
 
-    def _load_layout_icon(self):
-        self._delete_layout_icon()
-        # The alternate bundled ICO has a reliable Win32 mask at native DPI.
-        # The selected mode remains visible in the adjacent text value.
-        filename = 'fluent_slide_multiple.ico'
-        root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
-        path = root / 'assets' / 'image_layout' / filename
-        if path.is_file():
-            self._layout_icon = self._user32.LoadImageW(
-                None, str(path), IMAGE_ICON, self._px(16), self._px(16),
-                LR_LOADFROMFILE)
-
-    def _delete_layout_icon(self):
-        if self._layout_icon:
-            self._user32.DestroyIcon(self._layout_icon)
-        self._layout_icon = None
-
     def _create_fonts(self):
         self._normal_font = self._font(11, 400)
         self._title_font = self._font(11, 600)
+        self._icon_font = self._font(15, 400, 'Segoe Fluent Icons')
 
-    def _font(self, pixels, weight):
+    def _font(self, pixels, weight, face='Segoe UI'):
         return self._gdi32.CreateFontW(
             -self._px(pixels), 0, 0, 0, weight, 0, 0, 0, 1, 0, 0, 5, 0,
-            'Segoe UI')
+            face)
 
     def _delete_fonts(self):
-        for font in (self._normal_font, self._title_font):
+        for font in (self._normal_font, self._title_font, self._icon_font):
             if font:
                 self._gdi32.DeleteObject(font)
         self._normal_font = None
         self._title_font = None
+        self._icon_font = None
 
     def _px(self, value):
         return max(1, round(value * self._dpi / 96.0))

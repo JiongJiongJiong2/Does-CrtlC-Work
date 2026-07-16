@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 from PySide6.QtCore import QRect
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
 from core.cursor_metrics import CursorMetrics, cursor_ui_scale
@@ -20,6 +20,7 @@ from ui.feedback_layout import (DOT_CX, bottom_dock_dot_y,
                                 visible_content_bounds, window_size)
 from ui.image_layout import cascade_layer_offset, cascade_step
 from ui.feedback_widget import FeedbackType, FeedbackWidget
+from ui.components.image_renderer import ImageRenderer
 
 
 class CursorMetricsTests(unittest.TestCase):
@@ -120,17 +121,16 @@ class CursorMetricsTests(unittest.TestCase):
 
     def test_cascade_uses_four_horizontal_slots_and_reverses_at_right_dock(self):
         self.assertEqual(cascade_layer_offset(0, 4, 0.0), 0.0)
-        self.assertEqual(cascade_layer_offset(3, 4, 0.0), 72.0)
+        self.assertAlmostEqual(cascade_layer_offset(3, 4, 0.0), 99.12)
         self.assertEqual(cascade_layer_offset(0, 4, 1.0), 0.0)
-        self.assertEqual(cascade_layer_offset(3, 4, 1.0), -72.0)
+        self.assertAlmostEqual(cascade_layer_offset(3, 4, 1.0), -99.12)
         self.assertEqual(cascade_layer_offset(3, 4, 0.0,
                                               expansion_progress=0.0), 0.0)
-        self.assertEqual(cascade_step(180, 4), 20.0)
-        self.assertEqual(cascade_step(240, 4), 24.0)
-        fan_right, _ = visible_content_bounds(120, True, image_count=3)
+        self.assertAlmostEqual(cascade_step(180, 4), 60 / 3.54)
+        self.assertEqual(cascade_step(240, 4), 28.0)
         cascade_right, _ = visible_content_bounds(
-            120, True, image_count=4, image_layout_mode='cascade')
-        self.assertGreater(cascade_right, fan_right)
+            240, True, image_count=4, image_layout_mode='cascade')
+        self.assertLessEqual(cascade_right, DOT_CX + 240)
         self.assertLess(bottom_dock_dot_y(4, 'cascade'),
                         bottom_dock_dot_y(3, 'fan'))
 
@@ -276,6 +276,14 @@ class ScaledFeedbackTests(unittest.TestCase):
         self.assertGreater(canvas.pixelColor(15, 60).alpha(), 0)
         self.assertGreater(canvas.pixelColor(20, 155).alpha(), 0)
         self.assertEqual(canvas.pixelColor(15, 198).alpha(), 0)
+
+    def test_placeholder_uses_the_same_vanish_path_as_loaded_images(self):
+        canvas = QImage(160, 160, QImage.Format_ARGB32)
+        canvas.fill(0)
+        painter = QPainter(canvas)
+        ImageRenderer.paint(painter, 10, 10, None, 1.0, 0.0, 5, 5)
+        painter.end()
+        self.assertEqual(canvas.pixelColor(15, 15).alpha(), 0)
 
     def test_dock_transition_position_stays_between_both_endpoints(self):
         widget = FeedbackWidget(FeedbackType.COPY, text='copy')

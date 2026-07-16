@@ -78,8 +78,8 @@ IMAGE_STACK = {
     'offset_x': 14,             # 每层 X 偏移（向右，需足够大以露出边缘）
     'offset_y': 14,             # 每层 Y 偏移（向下，需足够大以露出边缘）
     'rotate_per_layer': 3.0,    # 每层旋转角度（以右下角为圆心，微旋转）
-    'opacity_layer1': 0.55,     # 第1层透明度
-    'opacity_layer2': 0.5,     # 第2层透明度
+    'opacity_layer1': 0.75,     # 第1层透明度
+    'opacity_layer2': 0.55,     # 第2层透明度
     'placeholder_opacity': 0.6, # 占位框透明度（图片未加载时）
     'placeholder_border_color': (255, 255, 255, 20),
     'placeholder_bg_color': (30, 30, 35, 200),
@@ -87,7 +87,7 @@ IMAGE_STACK = {
     'image_surface_color': (17, 17, 17, 220),
     'border_color': (255, 255, 255, 25),  # 堆叠层边框色
     'bg_color': (20, 20, 23, 240),        # 堆叠层背景色
-    'cascade_offset_x': 24,     # 横向层叠每张图片的水平错位（略宽于原 20 DIP）
+    'cascade_offset_x': 28,     # 递进层叠的基础间距；后层会按权重进一步拉开
     'cascade_opacities': (1.0, 0.78, 0.58, 0.42),
     'cascade_stagger': 0.06,    # 右侧镜像切换时每层错峰进度
 }

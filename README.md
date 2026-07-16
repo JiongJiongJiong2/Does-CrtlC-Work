@@ -73,12 +73,14 @@ If you only want to use it, download the `.exe` from Releases.
 
 ## Build
 
-Build instructions and the measured package-size audit are in [docs/PACKAGING.md](docs/PACKAGING.md). The current release build remains PyInstaller onefile:
+Build instructions and the measured package-size audit are in [docs/PACKAGING.md](docs/PACKAGING.md). Use the checked-in spec: it excludes unused Qt modules/plugins and is the lean reproducible onefile build.
 
 ```bash
 cd dose-ctrlc
-python -m PyInstaller --noconfirm --clean DoesCtrlCWork.spec
+.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean DoesCtrlCWork.spec
 ```
+
+Do not append broad `--collect-all` / `--hidden-import` flags unless a measured missing-runtime error requires them; those flags can undo the spec's size exclusions.
 
 If you use Conda and want to force a specific env:
 

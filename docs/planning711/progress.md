@@ -104,6 +104,27 @@
 - Removed the native layout icon's manually painted background tile; the icon now renders directly against the transparent/solid menu surface.
 - Regression suite remains green: 52 tests passed.
 
+## Session: 2026-07-16 — Phase 33 UI and rich-image follow-up
+
+### Completed
+
+- Removed the requested content-box top/bottom softening overlay while preserving the original horizontal reveal gradient.
+- Replaced fixed white ICO rendering with the Windows Fluent `PhotoCollection` system glyph (`U+E7AA`), coloured from the active menu foreground. This removes the light-theme contrast failure and lets the spec stop bundling both layout ICO files.
+- Changed native submenu selection text/marker from yellow to the palette title colour; hover remains neutral grey.
+- Fixed custom-colour lifecycle by excluding `Custom…` from the native popup re-entry loop, closing the HMENU before the colour dialog opens, and assigning the dialog an application owner.
+- Made cascade spacing progressive (later gaps wider) and capped the total image-group span to the text-content width when one exists.
+- Fixed placeholder exit drawing to respect `vanish_ratio`, matching loaded-image shrink/fade behaviour.
+- Updated README with the lean, spec-driven virtual-environment PyInstaller command and recorded that direct clipboard bitmap extraction is already first priority.
+
+### Verification
+
+- `python -m unittest discover -s tests -q`: 53 passed.
+- `python -m compileall -q .` and `git diff --check`: passed.
+
+### Pending desktop acceptance
+
+- Check the native Fluent glyph on the actual Windows version(s), custom picker focus/dismissal, and cascade spacing against both short and long copied text.
+
 ## Session: 2026-07-12
 
 ### Phase 6: P0–P2 动画与运行时修复

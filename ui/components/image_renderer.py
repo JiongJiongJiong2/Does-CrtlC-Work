@@ -63,14 +63,19 @@ class ImageRenderer:
               layer_opacity: float = 1.0) -> None:
         base_size = cls.IMAGE_BOX_SIZE
         if main_image is None or main_image.isNull():
+            draw_size = max(2, int(base_size * vanish_ratio))
+            draw_x = int(base_x + (dot_cx - base_x) * (1.0 - vanish_ratio))
+            draw_y = int(base_y + (dot_cy - base_y) * (1.0 - vanish_ratio))
+            draw_radius = max(2.0, cls.CORNER_RADIUS * vanish_ratio)
             painter.save()
             painter.setOpacity(
-                IMAGE_STACK.get('placeholder_opacity', 0.5) * layer_opacity)
+                vanish_ratio * IMAGE_STACK.get('placeholder_opacity', 0.5) *
+                layer_opacity)
             painter.setPen(QPen(QColor(
                 *IMAGE_STACK['placeholder_border_color']), 1))
             painter.setBrush(QColor(*IMAGE_STACK['placeholder_bg_color']))
-            painter.drawRoundedRect(int(base_x), int(base_y), base_size, base_size,
-                                    cls.CORNER_RADIUS, cls.CORNER_RADIUS)
+            painter.drawRoundedRect(draw_x, draw_y, draw_size, draw_size,
+                                    draw_radius, draw_radius)
             painter.restore()
             return
 

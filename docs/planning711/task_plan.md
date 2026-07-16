@@ -303,6 +303,19 @@ Phase 29 (菜单持久交互与 cascade 视觉修正；实现与自动化完成�
 
 - [x] Removed the extra light rounded tile behind the native image-layout icon so the ICO transparency reveals the menu surface directly.
 
+### Phase 33: visual consistency, menu lifecycle, and image feedback follow-up
+
+- [x] Remove the optional content-box vertical edge-softening overlay.
+- [x] Review icon-source options and make the layout icon legible on both light and dark menu surfaces without a boxed background.
+- [x] Replace submenu yellow selection treatment with neutral monochrome selection.
+- [x] Update README with the lean reproducible PyInstaller build command.
+- [x] Diagnose the native-colour-dialog / hidden-tray menu lifecycle and fix it if the popup owner can be kept coherent.
+- [x] Increase cascade separation with progressive spacing while keeping the outer image group within the content-box cap.
+- [x] Verify and repair image-placeholder exit/retract animation, if it is not connected to the state-machine exit path.
+- [x] Audit clipboard image/file extraction and document whether direct clipboard extraction is already used and its latency implications.
+- [ ] Manually validate the native Segoe Fluent `PhotoCollection` glyph on Windows 10/11, custom colour dialog ownership, and short/long content cascade spacing.
+- **Status:** in_progress (implementation and automated checks complete; desktop validation pending)
+
 ## Key Questions
 1. TMP 原型与当前动画在状态机、帧时序、缓动、合成方式上分别差在哪里？
 2. 当前实现检测的是 Ctrl+C 按键、选中文本，还是系统剪贴板实际变化？

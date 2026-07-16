@@ -1,10 +1,9 @@
 """Compact native-lifecycle tray menu for Dose Ctrl+C."""
 
 import sys
-from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, QSize, QPoint
-from PySide6.QtGui import QColor, QCursor, QIcon, QPainter
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -123,12 +122,17 @@ class ImageLayoutSelector(QPushButton):
         colors = tray_colors()
         label = '图片布局' if self._language == 'zh' else 'Image layout'
         value = ('扇形' if self._language == 'zh' else 'Fan')
-        icon_name = 'fluent_image_multiple.ico'
         if self._mode == IMAGE_LAYOUT_CASCADE:
             value = '层叠' if self._language == 'zh' else 'Cascade'
-            icon_name = 'fluent_slide_multiple.ico'
-        root = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
-        self.setIcon(QIcon(str(root / 'assets' / 'image_layout' / icon_name)))
+        icon = QPixmap(16, 16)
+        icon.fill(Qt.transparent)
+        icon_painter = QPainter(icon)
+        icon_painter.setRenderHint(QPainter.Antialiasing)
+        icon_painter.setPen(QColor(colors.title))
+        icon_painter.setFont(QFont('Segoe Fluent Icons', 15))
+        icon_painter.drawText(icon.rect(), Qt.AlignCenter, '\ue7aa')
+        icon_painter.end()
+        self.setIcon(QIcon(icon))
         self.setIconSize(QSize(16, 16))
         self.setText(f'{label}                                      {value}')
         self.setStyleSheet(

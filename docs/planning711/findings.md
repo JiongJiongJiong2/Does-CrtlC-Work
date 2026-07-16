@@ -183,6 +183,17 @@
 
 - The visible icon background was not part of the ICO; it was the owner-draw row's manually painted `#e5e5e5` rounded tile. Removing that tile preserves the icon's alpha and keeps the menu surface continuous.
 
+## Phase 33 findings (2026-07-16)
+
+- The requested edge softening is a distinct low-alpha vertical overlay in `ContentBox.paint`; it can be removed without affecting the existing left/right opacity gradient, box geometry, or yellow anchor.
+- The alternate ICO is transparent; its visibility problem is intrinsic to a fixed dark glyph placed on a light menu surface. A bitmap/ImageIcon cannot be recoloured by the operating system. Microsoft recommends the Segoe Fluent Icons font for Windows symbols; its foreground can be coloured and it renders crisply at standard 16/20/24px sizes. For this small bundled app, a monochrome, alpha-only SVG/ICO rendered in the current menu foreground is the compatible fallback.
+- Clipboard snapshots already read direct `QClipboard` bitmap data first, then use clipboard file URLs/data URIs/HTML sources. HTTP downloads are only a fallback for URLs copied from pages, because an image URL is not image bytes in the clipboard. Direct bitmap extraction is already the quickest path and avoids network work.
+- The native `QColorDialog.getColor(..., parent=None)` is opened after `TrackPopupMenuEx` has ended; its lack of an owner means it cannot participate in the menu's foreground/dismissal lifecycle, explaining a stranded menu when Explorer retracts the hidden-icons flyout.
+- The implementation now uses the official `PhotoCollection` glyph (`U+E7AA`) from Segoe Fluent Icons rather than a fixed-colour ICO. It is painted using the active foreground token, so the same glyph remains visible against both dark and light menu surfaces. See Microsoft’s [Segoe Fluent Icons guidance](https://learn.microsoft.com/en-us/windows/apps/design/iconography/segoe-fluent-icons-font) and its [PhotoCollection glyph entry](https://learn.microsoft.com/en-us/windows/apps/design/iconography/segoe-fluent-icons-font).
+- A direct bitmap (`QClipboard.image()`) is already copied synchronously into the feedback payload. Local clipboard files/data URIs are decoded off the UI path, while remote URLs are necessarily asynchronous because the clipboard only contains the address—not the remote image bytes.
+
+## Issues Encountered
+
 ## Issues Encountered
 | Issue | Resolution |
 |-------|------------|
