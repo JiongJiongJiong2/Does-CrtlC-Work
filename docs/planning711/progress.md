@@ -125,6 +125,11 @@
 
 - Check the native Fluent glyph on the actual Windows version(s), custom picker focus/dismissal, and cascade spacing against both short and long copied text.
 
+### Release documentation (2026-07-16)
+
+- Added the v2.2.0 release notes at `docs/releases/V2.2.0.md`.
+- Added a concise v2.2.0 entry and link under README's Release History, covering the recent native tray, cursor/taskbar, image layout, palette, clipboard, animation, and packaging work.
+
 ## Session: 2026-07-12
 
 ### Phase 6: P0–P2 动画与运行时修复

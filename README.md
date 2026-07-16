@@ -99,22 +99,25 @@ Output exe location: `dist/DoesCtrlCWork.exe`.
 - [Current technical review and status](docs/planning711/PROJECT_REVIEW.md)
 - [Packaging slimming guide](docs/PACKAGING.md)
 
-## New Release Description
-### v2.1.0 — Multi-Image Stack + Holding Mode + Parallel Loading
+## Release History
 
-This release adds multi-image visual feedback, a holding mode that waits for paste confirmation, and parallel image downloading for faster web image handling.
+### v2.2.0 — Native Windows Feedback, Cursor Scaling, and Palette Support
+
+This release consolidates the recent Windows interaction, animation, and packaging work.
 
 **Highlights**
-- **Multi-Image Stack Animation** — When copying 2+ images (from file manager or web), additional images fan out behind the main thumbnail as a stack. Stack layers use spring-physics animation and can show either real thumbnails or translucent placeholders (configurable via `show_real_thumbnails`).
-- **Holding Mode** — Copy feedback stays visible until `Ctrl+V` is detected or a 30-second timeout is reached; this is a paste-key intent indicator rather than a target-app success guarantee.
-- **Parallel Image Download** — Web images are now fetched concurrently using `ThreadPoolExecutor` (up to 3 threads). Copying 3 web images takes ~0.8s instead of ~2.4s.
-- **Full HTML Image Extraction** — All `<img>` tags in clipboard HTML are now extracted (previously only the first), so multi-image web copies are correctly detected.
-- **Configurable Placeholder Opacity** — Image placeholder transparency is now adjustable via `placeholder_opacity` in `IMAGE_STACK` config.
 
-**Bug Fixes**
-- Fixed stack animation starting at wrong time (state machine timing issue).
-- Fixed stack placeholder layers disappearing after the first image loaded.
-- Fixed drawing order: main image now correctly renders on top of stack layers.
+- Native rounded tray menu with persistent language/switch settings and better hidden-icons flyout dismissal.
+- Cursor-size-aware feedback placement with taskbar-aware bottom docking and smooth screen-edge transitions.
+- Fan and horizontal Cascade layouts for multi-image copies, up to four images, with clearer spacing and mirrored edge behaviour.
+- Classic dark, Light glass, and Custom palettes for the menu, text panel, image placeholders, and stack surfaces.
+- Direct clipboard bitmap feedback with asynchronous file/data-URI/web-image fallback loading.
+- Image and placeholder exit animations now shrink and fade in sync with the text feedback.
+- Leaner PyInstaller packaging through the checked-in spec and removal of unused assets.
+
+See the complete release notes in [docs/releases/V2.2.0.md](docs/releases/V2.2.0.md).
+
+
 
 **Notes**
 - For stable builds, package with `python -m PyInstaller` from the intended environment.
