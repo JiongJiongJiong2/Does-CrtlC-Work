@@ -22,6 +22,11 @@ ANIMATION_DURATION = {
 CLIPBOARD_CHECK = {
     'confirmation_timeout': 700,       # Ctrl+C 等待系统剪贴板事件的最长时间(ms)
     'event_retry_delays': [40, 120],   # 事件已到达但 MIME 暂不可读时的有限重试(ms)
+    'raw_image_max_bytes': 16 * 1024 * 1024,
+    'image_download_timeout': 3.0,     # 图片 URL 后台连接/读取超时(秒)
+    'image_download_attempts': 2,      # 网络图片最多尝试次数
+    'image_download_retry_delay': 0.15,
+    'image_download_max_bytes': 2 * 1024 * 1024,
 }
 
 # 颜色配置
@@ -64,7 +69,7 @@ SPRING = {
 # 屏幕边缘停靠过渡。进入/退出使用不同阈值，避免光标贴着边缘时
 # 右侧镜像或图片上下布局在相邻帧反复切换。
 DOCK_TRANSITION = {
-    'right_duration': 150,
+    'right_duration': 210,
     'bottom_duration': 190,
     'enter_margin': 12,
     'exit_margin': 26,

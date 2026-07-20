@@ -3,10 +3,13 @@
 import base64
 import os
 import unittest
+from unittest.mock import patch
+from urllib.error import URLError
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtCore import QByteArray, QMimeData
+from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
 from config import MAX_TEXT_LENGTH
@@ -69,6 +72,43 @@ class ClipboardMonitorTests(unittest.TestCase):
         self.assertEqual(len(preview), MAX_TEXT_LENGTH)
         self.assertTrue(preview.endswith('…'))
 
+    def test_raw_browser_image_mime_is_preferred_over_html_url(self):
+        raw = b'not-a-network-image'
+        mime = QMimeData()
+        mime.setHtml('<img src="https://example.com/protected.png">')
+        mime.setData('image/png', QByteArray(raw))
+
+        class Clipboard:
+            def mimeData(self):
+                return mime
+
+            def image(self):
+                return QImage()
+
+        self.monitor._clipboard = Clipboard()
+        snapshot = self.monitor._read_clipboard_snapshot()
+        _, _, image_count, http_urls, _, _, raw_images = snapshot
+        self.assertEqual(raw_images, [raw])
+        self.assertEqual(http_urls, [])
+        self.assertEqual(image_count, 1)
+
+    def test_raw_image_mime_without_html_is_not_ignored(self):
+        raw = b'clipboard-png'
+        mime = QMimeData()
+        mime.setData('image/png', QByteArray(raw))
+
+        class Clipboard:
+            def mimeData(self):
+                return mime
+
+            def image(self):
+                return QImage()
+
+        self.monitor._clipboard = Clipboard()
+        snapshot = self.monitor._read_clipboard_snapshot()
+        self.assertIsNotNone(snapshot)
+        self.assertEqual(snapshot[-1], [raw])
+
 
 class ImageWorkerTests(unittest.TestCase):
     def test_data_uris_keep_source_order(self):
@@ -91,3 +131,35 @@ class ImageWorkerTests(unittest.TestCase):
         worker.cancel()
         worker.run()
         self.assertEqual(received, [])
+
+    def test_raw_clipboard_bytes_are_emitted_before_any_download_task(self):
+        raw = b'clipboard-png'
+        worker = _ImageDataWorker(request_id=9, max_images=1)
+        worker.set_tasks(['https://example.com/image.png'], [], [], [raw])
+        worker._download = lambda _: self.fail('network fallback should not run')
+        received = []
+        worker.raw_images_ready.connect(lambda request_id, data: received.append(data))
+        worker.run()
+        self.assertEqual(received, [[raw]])
+
+    def test_download_retries_network_failure_before_succeeding(self):
+        class Response:
+            headers = {'Content-Type': 'image/png'}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self, _):
+                return b'image-bytes'
+
+        with patch('core.clipboard_monitor.urlopen',
+                   side_effect=[URLError('temporary failure'), Response()]) as open_mock, \
+                patch('core.clipboard_monitor.time.sleep') as sleep_mock:
+            data = _ImageDataWorker._download('https://example.com/image.png')
+
+        self.assertEqual(data, b'image-bytes')
+        self.assertEqual(open_mock.call_count, 2)
+        sleep_mock.assert_called_once()

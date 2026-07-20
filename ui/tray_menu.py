@@ -185,6 +185,7 @@ class TrayMenuPopup(QMenu):
     palette_changed = Signal(str, str)
     color_target_changed = Signal(str, str)
     color_overrides_reset = Signal()
+    font_target_changed = Signal(str, str)
     quit_requested = Signal()
 
     _TEXT = {
@@ -215,6 +216,7 @@ class TrayMenuPopup(QMenu):
         self._palette_name = 'classic'
         self._custom_color = '#52677f'
         self._color_overrides = {}
+        self._content_fonts = {'latin': '', 'cjk': ''}
         self._build_ui()
         self.set_language(self._language)
 
@@ -298,6 +300,20 @@ class TrayMenuPopup(QMenu):
         self.palette_button.setMenu(self._palette_menu)
         layout.addWidget(self.palette_button)
 
+        self.font_button = QPushButton(self.panel)
+        self.font_button.setObjectName('fontButton')
+        self.font_button.setCursor(Qt.PointingHandCursor)
+        self._font_menu = QMenu(self.font_button)
+        self._font_actions = {
+            'latin': self._font_menu.addAction(''),
+            'cjk': self._font_menu.addAction(''),
+        }
+        for target, action in self._font_actions.items():
+            action.triggered.connect(
+                lambda checked=False, value=target: self._choose_content_font(value))
+        self.font_button.setMenu(self._font_menu)
+        layout.addWidget(self.font_button)
+
         self.quit_button = QPushButton(self.panel)
         self.quit_button.setObjectName('quitButton')
         self.quit_button.setCursor(Qt.PointingHandCursor)
@@ -326,6 +342,10 @@ class TrayMenuPopup(QMenu):
         self._color_overrides = dict(color_overrides or {})
         self._refresh_palette_button()
 
+    def set_content_fonts(self, latin_family='', cjk_family=''):
+        self._content_fonts = {'latin': latin_family or '', 'cjk': cjk_family or ''}
+        self._refresh_palette_button()
+
     def _apply_theme(self):
         colors = tray_colors()
         self.setStyleSheet(f'''
@@ -343,6 +363,10 @@ class TrayMenuPopup(QMenu):
                              border-radius: 5px; min-height: 24px; font-size: 11px;
                              text-align: left; padding-left: 4px; }}
             #paletteButton:hover {{ background: {colors.hover}; }}
+            #fontButton {{ color: {colors.text}; background: transparent; border: 0;
+                         border-radius: 5px; min-height: 24px; font-size: 11px;
+                         text-align: left; padding-left: 4px; }}
+            #fontButton:hover {{ background: {colors.hover}; }}
         ''')
 
     def _add_switch_row(self, layout):
@@ -438,12 +462,39 @@ class TrayMenuPopup(QMenu):
             action.setText((en if self._language == 'en' else zh) + marker)
         self._reset_colors_action.setText(
             'Reset component colours' if self._language == 'en' else '重置局部颜色')
+        font_label = 'Text fonts' if self._language == 'en' else '文本字体'
+        selected = any(self._content_fonts.values())
+        value = ('Custom' if selected else 'Default') if self._language == 'en' else (
+            '自定义' if selected else '默认')
+        self.font_button.setText(f'{font_label}                              {value}')
+        font_entries = {
+            'latin': ('English text font...', '英文字体...'),
+            'cjk': ('Chinese text font...', '中文字体...'),
+        }
+        for target, action in self._font_actions.items():
+            en, zh = font_entries[target]
+            family = self._content_fonts[target]
+            action.setText((en if self._language == 'en' else zh) +
+                           (f'  ({family})' if family else ''))
         colors = tray_colors()
         self._palette_menu.setStyleSheet(
             f'QMenu {{ background: {colors.surface}; color: {colors.text}; border: 0; '
             f'border-radius: 8px; padding: 3px; }} QMenu::item {{ min-width: 104px; '
             f'min-height: 22px; padding: 0 10px; border-radius: 5px; }} '
             f'QMenu::item:selected {{ background: {colors.hover}; }}')
+
+    def _choose_content_font(self, target):
+        from PySide6.QtGui import QFont
+        from PySide6.QtWidgets import QFontDialog
+        initial = QFont(self._content_fonts.get(target) or '')
+        title = ('Choose English text font' if target == 'latin'
+                 else 'Choose Chinese text font')
+        accepted, font = QFontDialog.getFont(initial, self, title)
+        if not accepted or not font.family():
+            return
+        self._content_fonts[target] = font.family()
+        self._refresh_palette_button()
+        self.font_target_changed.emit(target, font.family())
 
     def _choose_palette(self, palette):
         if palette == 'custom':

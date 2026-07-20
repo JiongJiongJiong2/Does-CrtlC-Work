@@ -3,6 +3,8 @@ Does CtrlC Work - 剪贴板复制反馈动画工具
 主入口文件 - 系统托盘 + 全局监听 + 动画管理
 """
 
+import logging
+import os
 import sys
 import keyboard
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
@@ -17,6 +19,19 @@ from ui.feedback_widget import FeedbackWidget, FeedbackType
 from ui.image_layout import normalize_image_layout
 from ui.tray_menu import create_tray_menu
 from ui.theme import ThemeController
+from ui.text_style import TextStyleResolver
+
+
+def _configure_logging():
+    log_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.getcwd()), 'DoseCtrlC')
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, 'dose-ctrlc.log')
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+        handlers=[logging.FileHandler(log_path, encoding='utf-8'), logging.StreamHandler()],
+    )
+    logging.getLogger(__name__).info('logging initialized path=%s', log_path)
 
 
 class _NavigationBridge(QObject):
@@ -29,11 +44,18 @@ class ClipboardFXApp:
     """剪贴板反馈动画应用"""
     
     def __init__(self):
+        _configure_logging()
         self.app = QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)  # 关闭窗口不退出
         self.app.setApplicationName("Does CtrlC Work")
         self.app.setApplicationDisplayName("Does CtrlC Work")
         self._settings = QSettings('DoseCtrlC', 'DoseCtrlC')
+        self._content_font_latin = self._settings.value(
+            'content_font_latin', '', type=str)
+        self._content_font_cjk = self._settings.value(
+            'content_font_cjk', '', type=str)
+        TextStyleResolver.set_content_fonts(
+            self._content_font_latin, self._content_font_cjk)
         self.theme_controller = ThemeController(self._settings, self.app)
         self.theme_controller.theme_changed.connect(self._on_theme_changed)
         self._set_windows_app_id()
@@ -91,11 +113,15 @@ class ClipboardFXApp:
         self.tray_menu.palette_changed.connect(self._set_palette)
         self.tray_menu.color_target_changed.connect(self._set_color_target)
         self.tray_menu.color_overrides_reset.connect(self._reset_color_overrides)
+        self.tray_menu.font_target_changed.connect(self._set_content_font)
         self.tray_menu.quit_requested.connect(self._quit)
         if hasattr(self, 'theme_controller'):
             self.tray_menu.set_palette(self.theme_controller.palette,
                                        self.theme_controller.custom_color,
                                        self.theme_controller.color_overrides)
+        self.tray_menu.set_content_fonts(
+            getattr(self, '_content_font_latin', ''),
+            getattr(self, '_content_font_cjk', ''))
         # Do not use QSystemTrayIcon's automatic context-menu path: on Windows
         # it activates the Qt top-level popup and retracts Explorer's hidden-
         # icons flyout immediately. Both mouse entries are handled below.
@@ -154,6 +180,20 @@ class ClipboardFXApp:
         self.tray_menu.set_palette(self.theme_controller.palette,
                                    self.theme_controller.custom_color,
                                    self.theme_controller.color_overrides)
+
+    def _set_content_font(self, target: str, family: str):
+        if target not in ('latin', 'cjk') or not family:
+            return
+        if target == 'latin':
+            self._content_font_latin = family
+            self._settings.setValue('content_font_latin', family)
+        else:
+            self._content_font_cjk = family
+            self._settings.setValue('content_font_cjk', family)
+        TextStyleResolver.set_content_fonts(
+            self._content_font_latin, self._content_font_cjk)
+        self.tray_menu.set_content_fonts(self._content_font_latin,
+                                         self._content_font_cjk)
 
     def _on_theme_changed(self, palette: str):
         """Refresh custom-painted surfaces after an in-app palette change."""

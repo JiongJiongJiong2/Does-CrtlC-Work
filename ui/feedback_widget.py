@@ -521,7 +521,7 @@ class FeedbackWidget(QWidget):
             DOCK_TRANSITION[f'{edge}_duration'] * distance))
         self._engine.animate(
             prop, current, target, duration,
-            QEasingCurve(QEasingCurve.OutCubic))
+            QEasingCurve(QEasingCurve.InOutSine))
 
     def _dock_progress(self, edge: str) -> float:
         if not self._dock_initialized:

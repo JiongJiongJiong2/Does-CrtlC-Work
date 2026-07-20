@@ -32,6 +32,19 @@ class TextStyleResolver:
     """根据文本脚本选择字体，并缓存字体与 metrics。"""
 
     _cache: ClassVar[Dict[str, TextStyle]] = {}
+    _latin_family: ClassVar[str] = ''
+    _cjk_family: ClassVar[str] = ''
+
+    @classmethod
+    def set_content_fonts(cls, latin_family: str = '', cjk_family: str = '') -> None:
+        """Apply user-selected feedback fonts and invalidate cached metrics."""
+        latin_family = (latin_family or '').strip()
+        cjk_family = (cjk_family or '').strip()
+        if (latin_family, cjk_family) == (cls._latin_family, cls._cjk_family):
+            return
+        cls._latin_family = latin_family
+        cls._cjk_family = cjk_family
+        cls._cache.clear()
 
     @staticmethod
     def _has_cjk(text: str) -> bool:
@@ -69,7 +82,9 @@ class TextStyleResolver:
         font = QFont()
         font.setPointSize(TEXT_RENDER['font_size'])
         if kind == 'code_latin':
-            font.setFamilies(['Cascadia Mono', 'Cascadia Code', 'Consolas'])
+            font.setFamilies(([TextStyleResolver._latin_family]
+                              if TextStyleResolver._latin_family else []) +
+                             ['Cascadia Mono', 'Cascadia Code', 'Consolas'])
             font.setStyleHint(QFont.Monospace)
             font.setLetterSpacing(QFont.AbsoluteSpacing,
                                   TEXT_RENDER['latin_letter_spacing'])
@@ -78,7 +93,9 @@ class TextStyleResolver:
             font.setStyleHint(QFont.SansSerif)
             font.setLetterSpacing(QFont.AbsoluteSpacing, 0)
         else:
-            font.setFamilies(['Segoe UI Variable', 'Microsoft YaHei UI',
+            font.setFamilies(([TextStyleResolver._cjk_family]
+                              if TextStyleResolver._cjk_family else []) +
+                             ['Segoe UI Variable', 'Microsoft YaHei UI',
                               'Microsoft YaHei', 'Segoe UI'])
             font.setStyleHint(QFont.SansSerif)
             font.setLetterSpacing(QFont.AbsoluteSpacing,

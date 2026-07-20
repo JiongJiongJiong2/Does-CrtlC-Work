@@ -4,8 +4,8 @@ import ctypes
 from ctypes import wintypes
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QApplication, QColorDialog, QWidget
+from PySide6.QtGui import QColor, QFont
+from PySide6.QtWidgets import QApplication, QColorDialog, QFontDialog, QWidget
 
 from config import COLORS, IMAGE_STACK
 from ui.image_layout import (IMAGE_LAYOUT_CASCADE, IMAGE_LAYOUT_FAN,
@@ -62,12 +62,16 @@ ID_COLOR_CONTENT = 16
 ID_COLOR_CONTENT_TEXT = 17
 ID_COLOR_IMAGE = 18
 ID_COLOR_RESET = 19
+ID_FONT_MENU = 20
+ID_FONT_LATIN = 21
+ID_FONT_CJK = 22
 REOPEN_COMMANDS = (ID_LANGUAGE, ID_FEEDBACK, ID_HOLDING,
                    ID_IMAGE_LAYOUT_FAN, ID_IMAGE_LAYOUT_CASCADE,
                    ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT,
                    ID_COLOR_MENU_BG, ID_COLOR_MENU_TEXT, ID_COLOR_CONTENT,
                    ID_COLOR_CONTENT_TEXT,
-                   ID_COLOR_IMAGE, ID_COLOR_RESET)
+                   ID_COLOR_IMAGE, ID_COLOR_RESET, ID_FONT_LATIN,
+                   ID_FONT_CJK)
 
 WinEventProc = ctypes.WINFUNCTYPE(
     None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, wintypes.LONG,
@@ -154,6 +158,7 @@ class WindowsNativeTrayMenu(QWidget):
     palette_changed = Signal(str, str)
     color_target_changed = Signal(str, str)
     color_overrides_reset = Signal()
+    font_target_changed = Signal(str, str)
     quit_requested = Signal()
 
     _TEXT = {
@@ -188,6 +193,9 @@ class WindowsNativeTrayMenu(QWidget):
         ID_COLOR_CONTENT_TEXT: 24,
         ID_COLOR_IMAGE: 24,
         ID_COLOR_RESET: 24,
+        ID_FONT_MENU: 26,
+        ID_FONT_LATIN: 24,
+        ID_FONT_CJK: 24,
         ID_QUIT: 22,
         ID_BOTTOM_PADDING: 3,
     }
@@ -211,6 +219,7 @@ class WindowsNativeTrayMenu(QWidget):
         self._palette_name = 'classic'
         self._custom_color = '#52677f'
         self._color_overrides = {}
+        self._content_fonts = {'latin': '', 'cjk': ''}
         self._configure_win32()
 
     def _configure_win32(self):
@@ -326,6 +335,10 @@ class WindowsNativeTrayMenu(QWidget):
         self._color_overrides = dict(color_overrides or {})
         self.update()
 
+    def set_content_fonts(self, latin_family='', cjk_family=''):
+        self._content_fonts = {'latin': latin_family or '', 'cjk': cjk_family or ''}
+        self.update()
+
     def isVisible(self):
         return self._menu_open
 
@@ -434,19 +447,23 @@ class WindowsNativeTrayMenu(QWidget):
         layout_menu = self._user32.CreatePopupMenu()
         palette_menu = self._user32.CreatePopupMenu()
         color_menu = self._user32.CreatePopupMenu()
-        if not layout_menu or not palette_menu or not color_menu:
+        font_menu = self._user32.CreatePopupMenu()
+        if not layout_menu or not palette_menu or not color_menu or not font_menu:
             if layout_menu:
                 self._user32.DestroyMenu(layout_menu)
             if palette_menu:
                 self._user32.DestroyMenu(palette_menu)
             if color_menu:
                 self._user32.DestroyMenu(color_menu)
+            if font_menu:
+                self._user32.DestroyMenu(font_menu)
             self._user32.DestroyMenu(menu)
             self._gdi32.DeleteObject(background)
             return None, None
         self._configure_menu_surface(layout_menu, background)
         self._configure_menu_surface(palette_menu, background)
         self._configure_menu_surface(color_menu, background)
+        self._configure_menu_surface(font_menu, background)
         self._user32.AppendMenuW(
             layout_menu, MF_OWNERDRAW, ID_IMAGE_LAYOUT_FAN, None)
         self._user32.AppendMenuW(
@@ -458,6 +475,8 @@ class WindowsNativeTrayMenu(QWidget):
         for item_id in (ID_COLOR_MENU_BG, ID_COLOR_MENU_TEXT, ID_COLOR_CONTENT,
                         ID_COLOR_CONTENT_TEXT, ID_COLOR_IMAGE, ID_COLOR_RESET):
             self._user32.AppendMenuW(color_menu, MF_OWNERDRAW, item_id, None)
+        for item_id in (ID_FONT_LATIN, ID_FONT_CJK):
+            self._user32.AppendMenuW(font_menu, MF_OWNERDRAW, item_id, None)
         self._user32.AppendMenuW(
             palette_menu, MF_OWNERDRAW | MF_POPUP, int(color_menu), None)
         self._set_item_data(palette_menu, 3, ID_COLOR_MENU)
@@ -467,8 +486,11 @@ class WindowsNativeTrayMenu(QWidget):
             menu, MF_OWNERDRAW | MF_POPUP, int(layout_menu), None)
         self._set_item_data(menu, 3, ID_IMAGE_LAYOUT)
         self._user32.AppendMenuW(
+            menu, MF_OWNERDRAW | MF_POPUP, int(font_menu), None)
+        self._set_item_data(menu, 4, ID_FONT_MENU)
+        self._user32.AppendMenuW(
             menu, MF_OWNERDRAW | MF_POPUP, int(palette_menu), None)
-        self._set_item_data(menu, 4, ID_PALETTE)
+        self._set_item_data(menu, 5, ID_PALETTE)
         self._user32.AppendMenuW(menu, MF_OWNERDRAW, ID_QUIT, None)
         self._user32.AppendMenuW(
             menu, MF_OWNERDRAW | MF_DISABLED | MF_GRAYED, ID_BOTTOM_PADDING,
@@ -497,7 +519,8 @@ class WindowsNativeTrayMenu(QWidget):
         scale = self._dpi / 96.0
         width = round(210 * scale)
         root_items = (ID_LANGUAGE, ID_FEEDBACK, ID_HOLDING,
-                      ID_IMAGE_LAYOUT, ID_PALETTE, ID_QUIT, ID_BOTTOM_PADDING)
+                      ID_IMAGE_LAYOUT, ID_FONT_MENU, ID_PALETTE, ID_QUIT,
+                      ID_BOTTOM_PADDING)
         height = round(sum(self._HEIGHTS[item_id] for item_id in root_items)
                        * scale)
         x = point.x - width
@@ -529,6 +552,15 @@ class WindowsNativeTrayMenu(QWidget):
                 IMAGE_LAYOUT_FAN if command == ID_IMAGE_LAYOUT_FAN
                 else IMAGE_LAYOUT_CASCADE)
             self.image_layout_changed.emit(self._image_layout_mode)
+        elif command in (ID_FONT_LATIN, ID_FONT_CJK):
+            target = 'latin' if command == ID_FONT_LATIN else 'cjk'
+            title = ('Choose English text font' if target == 'latin'
+                     else 'Choose Chinese text font')
+            accepted, font = QFontDialog.getFont(
+                QFont(self._content_fonts.get(target) or ''), self, title)
+            if accepted and font.family():
+                self._content_fonts[target] = font.family()
+                self.font_target_changed.emit(target, font.family())
         elif command in (ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT):
             self._palette_name = (
                 'classic' if command == ID_PALETTE_CLASSIC else 'light')
@@ -591,7 +623,7 @@ class WindowsNativeTrayMenu(QWidget):
         width = 164 if item_id in (
             ID_COLOR_MENU, ID_COLOR_MENU_BG, ID_COLOR_CONTENT,
             ID_COLOR_MENU_TEXT, ID_COLOR_CONTENT_TEXT, ID_COLOR_IMAGE,
-            ID_COLOR_RESET) else 116 if item_id in (
+            ID_COLOR_RESET, ID_FONT_LATIN, ID_FONT_CJK) else 116 if item_id in (
             ID_IMAGE_LAYOUT_FAN, ID_IMAGE_LAYOUT_CASCADE,
             ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT, ID_PALETTE_CUSTOM) else 210
         measure.itemWidth = round(width * scale)
@@ -634,6 +666,10 @@ class WindowsNativeTrayMenu(QWidget):
             self._draw_switch(hdc, rect, self._holding_enabled)
         elif item_id == ID_IMAGE_LAYOUT:
             self._draw_image_layout_item(hdc, rect, text)
+        elif item_id == ID_FONT_MENU:
+            self._draw_font_menu_item(hdc, rect)
+        elif item_id in (ID_FONT_LATIN, ID_FONT_CJK):
+            self._draw_font_choice(hdc, rect, item_id)
         elif item_id in (ID_IMAGE_LAYOUT_FAN, ID_IMAGE_LAYOUT_CASCADE):
             self._draw_image_layout_choice(hdc, rect, item_id)
         elif item_id == ID_PALETTE:
@@ -708,6 +744,30 @@ class WindowsNativeTrayMenu(QWidget):
                         DT_LEFT, left=14, right=82)
         self._draw_text(hdc, values[self._palette_name], row, colors.muted,
                         self._normal_font, DT_RIGHT, left=112, right=24)
+
+    def _draw_font_menu_item(self, hdc, row):
+        colors = tray_colors()
+        label = 'Text fonts' if self._language == 'en' else '文本字体'
+        value = ('Custom' if any(self._content_fonts.values()) else 'Default')
+        if self._language == 'zh':
+            value = '自定义' if any(self._content_fonts.values()) else '默认'
+        self._draw_text(hdc, label, row, colors.text, self._normal_font,
+                        DT_LEFT, left=14, right=82)
+        self._draw_text(hdc, value, row, colors.muted, self._normal_font,
+                        DT_RIGHT, left=112, right=24)
+
+    def _draw_font_choice(self, hdc, row, item_id):
+        colors = tray_colors()
+        target = 'latin' if item_id == ID_FONT_LATIN else 'cjk'
+        label = ('English text font...' if target == 'latin' else 'Chinese text font...')
+        if self._language == 'zh':
+            label = '英文字体...' if target == 'latin' else '中文字体...'
+        family = self._content_fonts[target]
+        self._draw_text(hdc, label, row, colors.text, self._normal_font,
+                        DT_LEFT, left=12, right=72)
+        if family:
+            self._draw_text(hdc, family, row, colors.muted, self._normal_font,
+                            DT_RIGHT, left=86, right=12)
 
     def _draw_palette_choice(self, hdc, row, item_id):
         choices = {

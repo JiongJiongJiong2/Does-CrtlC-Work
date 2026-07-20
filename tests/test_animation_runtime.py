@@ -371,7 +371,7 @@ class TrayAndHoldingTests(unittest.TestCase):
 
     def test_animation_and_motion_clocks_stop_while_idle(self):
         engine = PropertyEngine()
-        self.assertEqual(engine._timer.interval(), 8)
+        self.assertEqual(engine._timer.interval(), 4)
         self.assertFalse(engine._timer.isActive())
         engine.set_frame_active('test', True)
         self.assertTrue(engine._timer.isActive())
@@ -379,7 +379,7 @@ class TrayAndHoldingTests(unittest.TestCase):
         self.assertFalse(engine._timer.isActive())
 
         tracker = MouseTracker()
-        self.assertEqual(tracker._motion_timer.interval(), 8)
+        self.assertEqual(tracker._motion_timer.interval(), 4)
         self.assertFalse(tracker._motion_timer.isActive())
         tracker.start_tracking()
         self.assertTrue(tracker._motion_timer.isActive())

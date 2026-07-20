@@ -2,11 +2,14 @@
 
 import base64
 import ctypes
+import logging
 import os
 import re
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Event
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 import keyboard
@@ -14,6 +17,8 @@ from PySide6.QtCore import QObject, QThread, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QImage
 
 from config import CLIPBOARD_CHECK, IMAGE_STACK, MAX_TEXT_LENGTH
+
+logger = logging.getLogger(__name__)
 
 
 class _ImageDataWorker(QThread):
@@ -28,12 +33,14 @@ class _ImageDataWorker(QThread):
         self._http_urls = []
         self._data_uris = []
         self._file_paths = []
+        self._raw_image_bytes = []
         self._cancelled = Event()
 
-    def set_tasks(self, http_urls, data_uris, file_paths):
+    def set_tasks(self, http_urls, data_uris, file_paths, raw_image_bytes=None):
         self._http_urls = list(http_urls)
         self._data_uris = list(data_uris)
         self._file_paths = list(file_paths)
+        self._raw_image_bytes = list(raw_image_bytes or [])
 
     def cancel(self):
         self._cancelled.set()
@@ -41,7 +48,15 @@ class _ImageDataWorker(QThread):
     def run(self):
         if self._max_images <= 0:
             return
-        raw_list = []
+        logger.info('clipboard image worker started request=%s raw=%s files=%s data_uris=%s http_urls=%s',
+                    self._request_id, len(self._raw_image_bytes), len(self._file_paths),
+                    len(self._data_uris), len(self._http_urls))
+        raw_list = list(self._raw_image_bytes[:self._max_images])
+        if self._cancelled.is_set():
+            return
+        if len(raw_list) >= self._max_images:
+            self._emit_if_current(raw_list)
+            return
         for path in self._file_paths[:self._max_images]:
             if self._cancelled.is_set():
                 return
@@ -71,7 +86,9 @@ class _ImageDataWorker(QThread):
                     return
                 try:
                     ordered_results[futures[future]] = future.result()
-                except Exception:
+                except Exception as error:
+                    logger.warning('clipboard image worker task failed request=%s error=%s: %s',
+                                   self._request_id, type(error).__name__, error)
                     continue
 
         raw_list.extend(data for data in ordered_results if data)
@@ -86,7 +103,9 @@ class _ImageDataWorker(QThread):
         try:
             with open(path, 'rb') as file:
                 return file.read()
-        except OSError:
+        except OSError as error:
+            logger.warning('clipboard image file read failed name=%s error=%s: %s',
+                           os.path.basename(path), type(error).__name__, error)
             return None
 
     @staticmethod
@@ -95,21 +114,42 @@ class _ImageDataWorker(QThread):
             if ';base64,' not in uri:
                 return None
             return base64.b64decode(uri.split(';base64,', 1)[1], validate=False)
-        except Exception:
+        except Exception as error:
+            logger.warning('clipboard image data URI decode failed error=%s: %s',
+                           type(error).__name__, error)
             return None
 
     @staticmethod
     def _download(url):
-        try:
-            request = Request(url, headers={'User-Agent': 'DoseCtrlC/1.0'})
-            with urlopen(request, timeout=0.8) as response:
-                content_type = (response.headers.get('Content-Type') or '').lower()
-                if 'image' not in content_type:
-                    return None
-                data = response.read(2 * 1024 * 1024 + 1)
-                return data if len(data) <= 2 * 1024 * 1024 else None
-        except Exception:
-            return None
+        host = urlsplit(url).netloc or '<unknown>'
+        timeout = CLIPBOARD_CHECK.get('image_download_timeout', 3.0)
+        attempts = max(1, int(CLIPBOARD_CHECK.get('image_download_attempts', 2)))
+        retry_delay = max(0.0, CLIPBOARD_CHECK.get('image_download_retry_delay', 0.15))
+        max_bytes = CLIPBOARD_CHECK.get('image_download_max_bytes', 2 * 1024 * 1024)
+        for attempt in range(1, attempts + 1):
+            try:
+                logger.info('clipboard image download attempt=%s/%s host=%s timeout=%ss',
+                            attempt, attempts, host, timeout)
+                request = Request(url, headers={'User-Agent': 'DoseCtrlC/1.0'})
+                with urlopen(request, timeout=timeout) as response:
+                    content_type = (response.headers.get('Content-Type') or '').lower()
+                    if 'image' not in content_type:
+                        logger.warning('clipboard image download rejected host=%s content_type=%s',
+                                       host, content_type or '<missing>')
+                        return None
+                    data = response.read(max_bytes + 1)
+                    if len(data) > max_bytes:
+                        logger.warning('clipboard image download rejected host=%s size=%s reason=too_large',
+                                       host, len(data))
+                        return None
+                    logger.info('clipboard image download succeeded host=%s bytes=%s', host, len(data))
+                    return data
+            except Exception as error:
+                logger.warning('clipboard image download failed attempt=%s/%s host=%s error=%s: %s',
+                               attempt, attempts, host, type(error).__name__, error)
+                if attempt < attempts and retry_delay:
+                    time.sleep(retry_delay)
+        return None
 
 
 class ClipboardMonitor(QObject):
@@ -234,14 +274,25 @@ class ClipboardMonitor(QObject):
             has_image = mime_data.hasImage()
             has_urls = mime_data.hasUrls()
             has_html = mime_data.hasHtml()
-            if not (text or has_image or has_urls or has_html):
+            has_raw_image_mime = self._has_raw_image_mime(mime_data)
+            logger.info('clipboard snapshot formats=%s image=%s urls=%s html=%s raw_image_mime=%s',
+                        ','.join(str(value) for value in mime_data.formats()), has_image,
+                        has_urls, has_html, has_raw_image_mime)
+            if not (text or has_image or has_urls or has_html or has_raw_image_mime):
                 return None
 
-            images, http_urls, data_uris, file_paths = [], [], [], []
+            images, raw_image_bytes = [], []
+            http_urls, data_uris, file_paths = [], [], []
             if has_image:
                 image = clipboard.image()
                 if isinstance(image, QImage) and not image.isNull():
                     images.append(self._safe_copy(image))
+                else:
+                    image = mime_data.imageData()
+                    if isinstance(image, QImage) and not image.isNull():
+                        images.append(self._safe_copy(image))
+            if not images:
+                raw_image_bytes = self._read_raw_image_mime(mime_data)
             if has_urls:
                 for url in mime_data.urls():
                     local_path = url.toLocalFile()
@@ -262,30 +313,43 @@ class ClipboardMonitor(QObject):
                 elif text.strip().startswith(('http://', 'https://')):
                     http_urls.append(text.strip())
 
-            image_count = len(images) + len(file_paths) + len(data_uris) + len(http_urls)
+            # Browser clipboard formats often contain both a local image
+            # representation and a remote HTML URL. Prefer the local snapshot:
+            # the URL may require cookies/referer or expire before downloading.
+            if images or raw_image_bytes or file_paths or data_uris:
+                http_urls = []
+            image_count = (len(images) + len(raw_image_bytes) + len(file_paths) +
+                           len(data_uris) + len(http_urls))
+            logger.info('clipboard image sources qimage=%s raw=%s files=%s data_uris=%s http_urls=%s',
+                        len(images), len(raw_image_bytes), len(file_paths), len(data_uris), len(http_urls))
             display_text = self._trunc(text) if text else ''
             if not display_text and image_count:
                 display_text = 'Copied Image' if image_count == 1 else f'Copied {image_count} Images'
-            return display_text, images, image_count, http_urls, data_uris, file_paths
-        except Exception:
+            return (display_text, images, image_count, http_urls, data_uris,
+                    file_paths, raw_image_bytes)
+        except Exception as error:
+            logger.exception('clipboard snapshot failed error=%s: %s', type(error).__name__, error)
             return None
 
     def _emit_snapshot(self, snapshot):
-        display_text, images, image_count, http_urls, data_uris, file_paths = snapshot
+        (display_text, images, image_count, http_urls, data_uris, file_paths,
+         raw_image_bytes) = snapshot
         self.copy_success.emit(display_text)
         self.copy_rich.emit(display_text, images, image_count)
         self._image_request_id += 1
         request_id = self._image_request_id
         self._cancel_image_workers()
-        if not (file_paths or data_uris or http_urls):
+        if not (raw_image_bytes or file_paths or data_uris or http_urls):
             return
         remaining = max(0, IMAGE_STACK.get('max_preload', 4) - len(images))
         if remaining:
-            self._start_worker(request_id, http_urls, data_uris, file_paths, remaining, image_count)
+            self._start_worker(request_id, http_urls, data_uris, file_paths,
+                               raw_image_bytes, remaining, image_count)
 
-    def _start_worker(self, request_id, http_urls, data_uris, file_paths, max_images, image_count):
+    def _start_worker(self, request_id, http_urls, data_uris, file_paths,
+                      raw_image_bytes, max_images, image_count):
         worker = _ImageDataWorker(request_id, max_images, self)
-        worker.set_tasks(http_urls, data_uris, file_paths)
+        worker.set_tasks(http_urls, data_uris, file_paths, raw_image_bytes)
         self._image_workers.add(worker)
         worker.raw_images_ready.connect(
             lambda worker_id, raw_list, total=image_count: self._on_raw_ready(worker_id, raw_list, total))
@@ -300,8 +364,14 @@ class ClipboardMonitor(QObject):
             image = QImage()
             if image.loadFromData(data):
                 images.append(self._safe_copy(image))
+            else:
+                logger.warning('clipboard image decode failed request=%s bytes=%s', request_id, len(data))
         if images:
+            logger.info('clipboard image decode succeeded request=%s images=%s expected=%s',
+                        request_id, len(images), image_count)
             self.images_updated.emit(images, image_count)
+        elif raw_list:
+            logger.warning('clipboard image decode produced no usable images request=%s', request_id)
 
     def _on_worker_finished(self, worker):
         self._image_workers.discard(worker)
@@ -310,6 +380,41 @@ class ClipboardMonitor(QObject):
     def _cancel_image_workers(self):
         for worker in tuple(self._image_workers):
             worker.cancel()
+
+    @staticmethod
+    def _has_raw_image_mime(mime_data):
+        preferred_formats = {
+            'image/png', 'image/jpeg', 'image/jpg', 'image/webp',
+            'image/gif', 'image/bmp', 'image/tiff',
+        }
+        try:
+            return bool({str(value).lower() for value in mime_data.formats()} & preferred_formats)
+        except (RuntimeError, TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _read_raw_image_mime(mime_data):
+        """Copy browser-provided image bytes while the clipboard owns them."""
+        max_size = CLIPBOARD_CHECK.get('raw_image_max_bytes', 16 * 1024 * 1024)
+        preferred_formats = (
+            'image/png', 'image/jpeg', 'image/jpg', 'image/webp',
+            'image/gif', 'image/bmp', 'image/tiff',
+        )
+        try:
+            formats = {str(value).lower() for value in mime_data.formats()}
+            for mime_type in preferred_formats:
+                if mime_type not in formats:
+                    continue
+                raw = bytes(mime_data.data(mime_type))
+                if 0 < len(raw) <= max_size:
+                    logger.info('clipboard raw image MIME selected type=%s bytes=%s', mime_type, len(raw))
+                    return [raw]
+                logger.warning('clipboard raw image MIME rejected type=%s bytes=%s limit=%s',
+                               mime_type, len(raw), max_size)
+        except (RuntimeError, TypeError, ValueError) as error:
+            logger.warning('clipboard raw image MIME read failed error=%s: %s',
+                           type(error).__name__, error)
+        return []
 
     @staticmethod
     def _get_clipboard_sequence():

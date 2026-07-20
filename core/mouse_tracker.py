@@ -59,7 +59,7 @@ class MouseTracker(QObject):
         self._last_tick_ns = None
         self._motion_timer = QTimer(self)
         self._motion_timer.setTimerType(Qt.PreciseTimer)
-        self._motion_timer.setInterval(8)
+        self._motion_timer.setInterval(4)
         self._motion_timer.timeout.connect(self.advance)
 
     def start_tracking(self):
