@@ -37,6 +37,7 @@ COLORS = {
 # 尺寸配置
 SIZES = {
     'dot_radius': 5,           # 圆点半径
+    'box_text_min_width': 0,   # 短文本按实际内容宽度收紧
     'box_height': 28,          # 框高度
     'box_min_width': 80,       # 框最小宽度
     'box_max_width': 450,      # 框最大宽度
@@ -92,8 +93,27 @@ IMAGE_STACK = {
     'cascade_stagger': 0.06,    # 右侧镜像切换时每层错峰进度
 }
 
-# 文本截断长度
-MAX_TEXT_LENGTH = 45
+# 文本预览。剪贴板只在变更事件中读取一次；UI 仅保留这份受控快照，
+# 防止超大复制内容在动画或绘制中造成明显分配和卡顿。
+MAX_TEXT_LENGTH = 65536
+
+TEXT_VIEW = {
+    # 横向导航按逻辑像素移动；字符数由当前字体的实际字宽决定。
+    'scroll_pixels': 42,
+    'scroll_duration': 110,
+    # 滚动边界按较小窗口计算，保证 CJK/emoji 宽字符的中等长度行也能
+    # 到达行尾；实际静态绘制会使用更大的窗口以填满内容框。
+    'scroll_window_chars': 32,
+    'render_chars': 192,
+    'scroll_buffer_chars': 64,
+    # 宽度计算最多探测每行的前 N 个字符。超过这个长度的行直接使用
+    # 固定框宽，避免为超长行创建完整文本布局。
+    'width_probe_chars': 512,
+    'max_visible_lines': 5,
+    'line_expand_duration': 150,
+    # 单行框保持原高度；展开后的相邻行使用更紧凑的基线步进。
+    'expanded_line_step': 20,
+}
 
 # Unicode 块字符池
 BLOCK_CHARS = ['█', '▓', '▒', '░', '▖', '▗', '▘', '▙', '▚', '▛', '▜', '▝', '▞', '▟']

@@ -7,6 +7,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QColorDialog, QWidget
 
+from config import COLORS, IMAGE_STACK
 from ui.image_layout import (IMAGE_LAYOUT_CASCADE, IMAGE_LAYOUT_FAN,
                              normalize_image_layout)
 from ui.theme import tray_colors
@@ -54,9 +55,19 @@ ID_PALETTE = 9
 ID_PALETTE_CLASSIC = 10
 ID_PALETTE_LIGHT = 11
 ID_PALETTE_CUSTOM = 12
+ID_COLOR_MENU = 13
+ID_COLOR_MENU_BG = 14
+ID_COLOR_MENU_TEXT = 15
+ID_COLOR_CONTENT = 16
+ID_COLOR_CONTENT_TEXT = 17
+ID_COLOR_IMAGE = 18
+ID_COLOR_RESET = 19
 REOPEN_COMMANDS = (ID_LANGUAGE, ID_FEEDBACK, ID_HOLDING,
                    ID_IMAGE_LAYOUT_FAN, ID_IMAGE_LAYOUT_CASCADE,
-                   ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT)
+                   ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT,
+                   ID_COLOR_MENU_BG, ID_COLOR_MENU_TEXT, ID_COLOR_CONTENT,
+                   ID_COLOR_CONTENT_TEXT,
+                   ID_COLOR_IMAGE, ID_COLOR_RESET)
 
 WinEventProc = ctypes.WINFUNCTYPE(
     None, wintypes.HANDLE, wintypes.DWORD, wintypes.HWND, wintypes.LONG,
@@ -141,6 +152,8 @@ class WindowsNativeTrayMenu(QWidget):
     language_toggled = Signal(str)
     image_layout_changed = Signal(str)
     palette_changed = Signal(str, str)
+    color_target_changed = Signal(str, str)
+    color_overrides_reset = Signal()
     quit_requested = Signal()
 
     _TEXT = {
@@ -168,6 +181,13 @@ class WindowsNativeTrayMenu(QWidget):
         ID_PALETTE_CLASSIC: 24,
         ID_PALETTE_LIGHT: 24,
         ID_PALETTE_CUSTOM: 24,
+        ID_COLOR_MENU: 26,
+        ID_COLOR_MENU_BG: 24,
+        ID_COLOR_MENU_TEXT: 24,
+        ID_COLOR_CONTENT: 24,
+        ID_COLOR_CONTENT_TEXT: 24,
+        ID_COLOR_IMAGE: 24,
+        ID_COLOR_RESET: 24,
         ID_QUIT: 22,
         ID_BOTTOM_PADDING: 3,
     }
@@ -190,6 +210,7 @@ class WindowsNativeTrayMenu(QWidget):
         self._icon_font = None
         self._palette_name = 'classic'
         self._custom_color = '#52677f'
+        self._color_overrides = {}
         self._configure_win32()
 
     def _configure_win32(self):
@@ -298,10 +319,11 @@ class WindowsNativeTrayMenu(QWidget):
         """Colors are read at draw time; repaint on the next native popup."""
         self.update()
 
-    def set_palette(self, palette, custom_color='#52677f'):
+    def set_palette(self, palette, custom_color='#52677f', color_overrides=None):
         self._palette_name = (palette if palette in ('classic', 'light', 'custom')
                               else 'classic')
         self._custom_color = custom_color or '#52677f'
+        self._color_overrides = dict(color_overrides or {})
         self.update()
 
     def isVisible(self):
@@ -411,16 +433,20 @@ class WindowsNativeTrayMenu(QWidget):
         self._configure_menu_surface(menu, background)
         layout_menu = self._user32.CreatePopupMenu()
         palette_menu = self._user32.CreatePopupMenu()
-        if not layout_menu or not palette_menu:
+        color_menu = self._user32.CreatePopupMenu()
+        if not layout_menu or not palette_menu or not color_menu:
             if layout_menu:
                 self._user32.DestroyMenu(layout_menu)
             if palette_menu:
                 self._user32.DestroyMenu(palette_menu)
+            if color_menu:
+                self._user32.DestroyMenu(color_menu)
             self._user32.DestroyMenu(menu)
             self._gdi32.DeleteObject(background)
             return None, None
         self._configure_menu_surface(layout_menu, background)
         self._configure_menu_surface(palette_menu, background)
+        self._configure_menu_surface(color_menu, background)
         self._user32.AppendMenuW(
             layout_menu, MF_OWNERDRAW, ID_IMAGE_LAYOUT_FAN, None)
         self._user32.AppendMenuW(
@@ -429,6 +455,12 @@ class WindowsNativeTrayMenu(QWidget):
                         ID_PALETTE_CUSTOM):
             self._user32.AppendMenuW(
                 palette_menu, MF_OWNERDRAW, item_id, None)
+        for item_id in (ID_COLOR_MENU_BG, ID_COLOR_MENU_TEXT, ID_COLOR_CONTENT,
+                        ID_COLOR_CONTENT_TEXT, ID_COLOR_IMAGE, ID_COLOR_RESET):
+            self._user32.AppendMenuW(color_menu, MF_OWNERDRAW, item_id, None)
+        self._user32.AppendMenuW(
+            palette_menu, MF_OWNERDRAW | MF_POPUP, int(color_menu), None)
+        self._set_item_data(palette_menu, 3, ID_COLOR_MENU)
         for item_id in (ID_LANGUAGE, ID_FEEDBACK, ID_HOLDING):
             self._user32.AppendMenuW(menu, MF_OWNERDRAW, item_id, None)
         self._user32.AppendMenuW(
@@ -509,6 +541,27 @@ class WindowsNativeTrayMenu(QWidget):
                 self._palette_name = 'custom'
                 self._custom_color = color.name()
                 self.palette_changed.emit('custom', self._custom_color)
+        elif command in (ID_COLOR_MENU_BG, ID_COLOR_MENU_TEXT, ID_COLOR_CONTENT,
+                         ID_COLOR_CONTENT_TEXT, ID_COLOR_IMAGE):
+            targets = {
+                ID_COLOR_MENU_BG: 'menu',
+                ID_COLOR_MENU_TEXT: 'menu_text',
+                ID_COLOR_CONTENT: 'content',
+                ID_COLOR_CONTENT_TEXT: 'content_text',
+                ID_COLOR_IMAGE: 'image',
+            }
+            target = targets[command]
+            color = QColorDialog.getColor(
+                QColor(self._color_overrides.get(
+                    target, self._target_default_color(target))), self,
+                'Choose component colour')
+            if color.isValid():
+                self._color_overrides[target] = color.name()
+                self.color_target_changed.emit(target, color.name())
+        elif command == ID_COLOR_RESET:
+            if self._color_overrides:
+                self._color_overrides = {}
+                self.color_overrides_reset.emit()
         elif command == ID_QUIT:
             self.quit_requested.emit()
 
@@ -535,7 +588,10 @@ class WindowsNativeTrayMenu(QWidget):
     def _measure_item(self, measure):
         scale = self._dpi / 96.0
         item_id = int(measure.itemData or measure.itemID)
-        width = 116 if item_id in (
+        width = 164 if item_id in (
+            ID_COLOR_MENU, ID_COLOR_MENU_BG, ID_COLOR_CONTENT,
+            ID_COLOR_MENU_TEXT, ID_COLOR_CONTENT_TEXT, ID_COLOR_IMAGE,
+            ID_COLOR_RESET) else 116 if item_id in (
             ID_IMAGE_LAYOUT_FAN, ID_IMAGE_LAYOUT_CASCADE,
             ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT, ID_PALETTE_CUSTOM) else 210
         measure.itemWidth = round(width * scale)
@@ -585,6 +641,11 @@ class WindowsNativeTrayMenu(QWidget):
         elif item_id in (ID_PALETTE_CLASSIC, ID_PALETTE_LIGHT,
                          ID_PALETTE_CUSTOM):
             self._draw_palette_choice(hdc, rect, item_id)
+        elif item_id == ID_COLOR_MENU:
+            self._draw_color_menu_item(hdc, rect)
+        elif item_id in (ID_COLOR_MENU_BG, ID_COLOR_MENU_TEXT, ID_COLOR_CONTENT,
+                         ID_COLOR_CONTENT_TEXT, ID_COLOR_IMAGE, ID_COLOR_RESET):
+            self._draw_color_choice(hdc, rect, item_id)
         elif item_id == ID_QUIT:
             self._draw_text(hdc, text['quit'], rect, colors.text,
                              self._normal_font, DT_LEFT, left=14, right=10)
@@ -637,7 +698,7 @@ class WindowsNativeTrayMenu(QWidget):
 
     def _draw_palette_item(self, hdc, row):
         colors = tray_colors()
-        label = 'Colour' if self._language == 'en' else '配色'
+        label = 'Theme' if self._language == 'en' else '主题配色'
         values = {
             'classic': 'Classic' if self._language == 'en' else '经典',
             'light': 'Light' if self._language == 'en' else '浅色',
@@ -664,6 +725,50 @@ class WindowsNativeTrayMenu(QWidget):
         if active:
             self._draw_text(hdc, '*', row, colors.title, self._title_font,
                             DT_RIGHT, left=82, right=12)
+
+    def _draw_color_menu_item(self, hdc, row):
+        colors = tray_colors()
+        label = 'Component colours' if self._language == 'en' else '局部颜色'
+        self._draw_text(hdc, label, row, colors.text, self._normal_font,
+                        DT_LEFT, left=12, right=28)
+
+    def _draw_color_choice(self, hdc, row, item_id):
+        choices = {
+            ID_COLOR_MENU_BG: ('menu', 'Menu background...', '菜单背景...'),
+            ID_COLOR_MENU_TEXT: ('menu_text', 'Menu text...', '菜单文字...'),
+            ID_COLOR_CONTENT: ('content', 'Content box...', '内容框...'),
+            ID_COLOR_CONTENT_TEXT: ('content_text', 'Content text...', '内容框文字...'),
+            ID_COLOR_IMAGE: ('image', 'Image surface...', '图片底板...'),
+        }
+        colors = tray_colors()
+        if item_id == ID_COLOR_RESET:
+            label = ('Reset component colours' if self._language == 'en'
+                     else '重置局部颜色')
+            self._draw_text(hdc, label, row, colors.text, self._normal_font,
+                            DT_LEFT, left=12, right=12)
+            return
+        target, en, zh = choices[item_id]
+        active = target in self._color_overrides
+        self._draw_text(hdc, en if self._language == 'en' else zh, row,
+                        colors.title if active else colors.text,
+                        self._title_font if active else self._normal_font,
+                        DT_LEFT, left=12, right=28)
+        if active:
+            self._draw_text(hdc, '*', row, colors.title, self._title_font,
+                            DT_RIGHT, left=130, right=12)
+
+    def _target_default_color(self, target):
+        if target == 'menu':
+            return tray_colors().surface
+        if target == 'content':
+            red, green, blue, _ = COLORS['box_bg']
+            return QColor(red, green, blue).name()
+        if target == 'menu_text':
+            return tray_colors().text
+        if target == 'content_text':
+            return COLORS['text']
+        red, green, blue, _ = IMAGE_STACK['bg_color']
+        return QColor(red, green, blue).name()
 
     def _draw_text(self, hdc, text, row, color, font, alignment,
                    left, right):

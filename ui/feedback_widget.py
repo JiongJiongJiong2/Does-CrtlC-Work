@@ -10,7 +10,7 @@ from PySide6.QtGui import (QColor, QGuiApplication, QImage, QPainter, QPixmap,
 from PySide6.QtWidgets import QWidget
 
 from config import (ANIMATION_DURATION, BLOCK_CHARS, COLORS, DOCK_TRANSITION,
-                    IMAGE_STACK, SCRAMBLE_CHARS, SIZES, TEXT_RENDER)
+                    IMAGE_STACK, SCRAMBLE_CHARS, SIZES, TEXT_RENDER, TEXT_VIEW)
 from core.taskbar_boundary import TaskbarBoundary
 from ui.animation.property_engine import PropertyEngine
 from ui.animation.spring_ease import spring_ease
@@ -26,6 +26,7 @@ from ui.feedback_layout import (DOT_CX, DOT_CY, EDGE_DOCK_MARGIN,
 from ui.image_layout import (IMAGE_LAYOUT_CASCADE, cascade_layer_offset,
                              image_display_limit, normalize_image_layout)
 from ui.text_style import TextStyle, TextStyleResolver
+from ui.text_viewport import TextViewport
 
 
 class FeedbackType(Enum):
@@ -37,6 +38,7 @@ class FeedbackType(Enum):
 class FeedbackWidget(QWidget):
     animation_complete = Signal()
     frame_tick = Signal(float)
+    navigation_active_changed = Signal(bool)
 
     def __init__(self, feedback_type, text="", images=None,
                  image_count=0, holding_mode=False, parent=None,
@@ -47,11 +49,18 @@ class FeedbackWidget(QWidget):
         self._cursor_offset = cursor_offset or (
             float(SIZES['mouse_offset_x']), float(SIZES['mouse_offset_y']))
         self._feedback_type = feedback_type
-        self._text = text
-        self._text_style: TextStyle = TextStyleResolver.resolve(text)
-        self._text = self._text_style.elide(text) if text else ''
-        self._final_text_layout: Optional[QStaticText] = (
-            self._text_style.static_layout(self._text) if self._text else None)
+        self._raw_text = text if feedback_type == FeedbackType.COPY else ''
+        self._viewport = (TextViewport(self._raw_text,
+                                       TEXT_VIEW['scroll_window_chars'])
+                          if self._raw_text else None)
+        self._has_horizontal_overflow = False
+        self._text = ''
+        self._text_style: TextStyle = TextStyleResolver.resolve(self._raw_text)
+        self._final_text_layout: Optional[QStaticText] = None
+        self._visible_line_count = 1
+        self._display_lines = []
+        self._line_layouts = []
+        self._refresh_viewport_text()
         self._image_layout_mode = normalize_image_layout(image_layout_mode)
         self._image_display_limit = image_display_limit(self._image_layout_mode)
         requested_image_count = max(int(image_count or 0), len(images or []))
@@ -88,6 +97,14 @@ class FeedbackWidget(QWidget):
         self._image_scramble_progress = 0.0
         self._vanish_ratio = 1.0
         self._display_text = ""
+        self._text_scroll_offset = 0.0
+        self._text_alignment_offset = 0.0
+        self._terminal_text_alignment = 0.0
+        self._pending_scroll_column = None
+        self._pending_scroll_alignment = 0.0
+        self._queued_scroll_direction = 0
+        self._timeout_while_expanded = False
+        self._exit_after_collapse = False
         self._dock_right = False
         self._dock_bottom = False
         self._dock_right_progress = 0.0
@@ -96,12 +113,14 @@ class FeedbackWidget(QWidget):
         self._position_context = None
 
         self._target_width = 0.0
-        if feedback_type == FeedbackType.COPY and self._text:
-            self._target_width = min(
-                SIZES['box_max_width'],
-                max(SIZES['box_min_width'],
-                    self._text_style.horizontal_advance(self._text) +
-                    SIZES['box_padding']))
+        self._collapsed_width = 0.0
+        self._expanded_width = 0.0
+        if feedback_type == FeedbackType.COPY and self._raw_text:
+            self._collapsed_width = self._resolve_target_width(1, True)
+            self._expanded_width = self._resolve_target_width(
+                TEXT_VIEW['max_visible_lines'])
+            self._target_width = self._collapsed_width
+            self._configure_horizontal_scroll_limit()
 
         if feedback_type == FeedbackType.ERROR:
             self._dot_color = QColor(COLORS['dot_error'])
@@ -112,6 +131,7 @@ class FeedbackWidget(QWidget):
 
         self._sm = AnimationStateMachine(self)
         self._sm.action_requested.connect(self._execute_action)
+        self._sm.state_changed.connect(self._on_animation_state_changed)
         self._engine = PropertyEngine(self)
         self._engine.tick.connect(self._on_frame)
         self._engine.finished.connect(self._on_prop_finished)
@@ -161,6 +181,241 @@ class FeedbackWidget(QWidget):
         """Whether this feedback instance represents a copy waiting for Ctrl+V."""
         return self._holding_mode and self._feedback_type == FeedbackType.COPY
 
+    @property
+    def can_navigate_text(self) -> bool:
+        return bool(self._viewport and (
+            self._viewport.line_count > 1 or self._has_horizontal_overflow))
+
+    def navigate_text(self, direction: str) -> bool:
+        """Move the local text viewport; never access the system clipboard."""
+        if not self.can_navigate_text:
+            return False
+        self._make_text_interactive()
+        if self._sm.state not in (AnimationState.IMAGE_APPEAR,
+                                  AnimationState.STACK_APPEAR,
+                                  AnimationState.VIEWING,
+                                  AnimationState.HOLDING):
+            return False
+        if direction == 'left':
+            changed = self._start_horizontal_scroll(-1)
+        elif direction == 'right':
+            changed = self._start_horizontal_scroll(1)
+        elif direction == 'up':
+            self._complete_text_scroll(run_queued=False)
+            changed = self._change_visible_line_count(-1)
+        elif direction == 'down':
+            self._complete_text_scroll(run_queued=False)
+            changed = self._change_visible_line_count(1)
+        else:
+            return False
+        if not changed:
+            return False
+        if (self._sm.state == AnimationState.VIEWING and
+                not self._timeout_while_expanded):
+            self._state_timer.start(ANIMATION_DURATION['view_time'])
+        elif (self._sm.state == AnimationState.HOLDING and
+              not self._timeout_while_expanded):
+            self._holding_timer.start(ANIMATION_DURATION['holding_max'])
+        self.update()
+        return True
+
+    def _make_text_interactive(self) -> None:
+        """Finish the introductory text phase when the user presses an arrow."""
+        if self._sm.state == AnimationState.BOX_EXPAND:
+            self._engine.cancel('box_width')
+            self._box_width = self._target_width
+            self._sm.transition('done')
+        if self._sm.state == AnimationState.TEXT_REVEAL:
+            self._scramble_start_ms = None
+            self._last_scramble_refresh_ms = None
+            self._engine.set_frame_active('text_scramble', False)
+            self._display_text = self._text
+            self._continue_after_text()
+
+    def _start_horizontal_scroll(self, direction: int) -> bool:
+        if self._engine.has_active('text_scroll_offset'):
+            # Keep at most one queued step. Holding an arrow key then yields
+            # continuous motion without building a long post-release backlog.
+            self._queued_scroll_direction = direction
+            return True
+        current_column = self._viewport.column
+        target_column = self._pixel_step_target(direction)
+        if target_column == current_column:
+            return False
+        start_alignment = (self._text_alignment_offset
+                           if current_column == self._viewport.max_column else 0.0)
+        target_alignment = (self._terminal_text_alignment
+                            if target_column == self._viewport.max_column else 0.0)
+        if direction > 0:
+            render_column = current_column
+            translation_start = start_alignment
+            translation_end = -self._text_style.horizontal_advance(
+                self._viewport.text_between(current_column, target_column)) + target_alignment
+        else:
+            render_column = target_column
+            translation_start = -self._text_style.horizontal_advance(
+                self._viewport.text_between(target_column, current_column)) + start_alignment
+            translation_end = target_alignment
+        self._refresh_viewport_text(
+            render_column,
+            TEXT_VIEW['render_chars'] + TEXT_VIEW['scroll_buffer_chars'])
+        self._display_text = self._text
+        self._text_scroll_offset = translation_start
+        self._pending_scroll_column = target_column
+        self._pending_scroll_alignment = target_alignment
+        self._engine.animate(
+            'text_scroll_offset', translation_start, translation_end,
+            TEXT_VIEW['scroll_duration'],
+            QEasingCurve(QEasingCurve.OutCubic),
+            on_finished=self._complete_text_scroll)
+        return True
+
+    def _pixel_step_target(self, direction: int) -> int:
+        current = self._viewport.column
+        boundary = self._viewport.max_column
+        if direction > 0:
+            target = current
+            distance = 0.0
+            while target < boundary and distance < TEXT_VIEW['scroll_pixels']:
+                next_target = target + 1
+                distance += self._text_style.horizontal_advance(
+                    self._viewport.text_between(target, next_target))
+                target = next_target
+            return target
+        target = current
+        distance = 0.0
+        while target > 0 and distance < TEXT_VIEW['scroll_pixels']:
+            previous_target = target - 1
+            distance += self._text_style.horizontal_advance(
+                self._viewport.text_between(previous_target, target))
+            target = previous_target
+        return target
+
+    def _complete_text_scroll(self, run_queued: bool = True) -> None:
+        if self._pending_scroll_column is None:
+            return
+        if self._engine.has_active('text_scroll_offset'):
+            self._engine.cancel('text_scroll_offset')
+        self._viewport.set_column(self._pending_scroll_column)
+        self._pending_scroll_column = None
+        self._text_alignment_offset = self._pending_scroll_alignment
+        self._pending_scroll_alignment = 0.0
+        self._text_scroll_offset = 0.0
+        self._refresh_viewport_text()
+        self._display_text = self._text
+        self.update()
+        queued_direction = self._queued_scroll_direction if run_queued else 0
+        self._queued_scroll_direction = 0
+        if queued_direction:
+            self._start_horizontal_scroll(queued_direction)
+
+    def _refresh_viewport_text(self, column: int = None,
+                               visible_chars: int = None) -> None:
+        viewport_column = (self._viewport.column
+                           if self._viewport is not None and column is None
+                           else (column or 0))
+        if self._viewport:
+            visible = self._viewport.text_slice(
+                viewport_column,
+                TEXT_VIEW['render_chars'] if visible_chars is None else visible_chars)
+        else:
+            visible = ''
+        self._text = visible
+        style_source = visible or self._raw_text
+        self._text_style = TextStyleResolver.resolve(style_source)
+        self._final_text_layout = (
+            self._text_style.static_layout(visible) if visible else None)
+        self._display_lines = [visible]
+        self._line_layouts = [self._final_text_layout]
+        if self._viewport:
+            visible_lines = min(self._visible_line_count,
+                                self._viewport.line_count)
+            for line_index in range(1, visible_lines):
+                line = self._viewport.line_slice(
+                    line_index, TEXT_VIEW['render_chars'], viewport_column)
+                self._display_lines.append(line)
+                self._line_layouts.append(
+                    self._text_style.static_layout(line) if line else None)
+
+    def _resolve_target_width(self, line_limit: int = 1,
+                              track_horizontal: bool = False) -> float:
+        """Measure only the lines visible in the collapsed or expanded mode."""
+        content_limit = SIZES['box_max_width'] - SIZES['box_padding']
+        widest = 0.0
+        for index, (sample, truncated) in enumerate(self._viewport.width_probe(
+                TEXT_VIEW['width_probe_chars'])):
+            if index >= max(1, int(line_limit)):
+                break
+            sample_width = self._text_style.horizontal_advance(sample)
+            if truncated or sample_width >= content_limit:
+                if track_horizontal:
+                    self._has_horizontal_overflow = True
+                return float(SIZES['box_max_width'])
+            widest = max(widest, sample_width)
+        return min(SIZES['box_max_width'], max(
+            SIZES['box_text_min_width'], widest + SIZES['box_padding']))
+
+    def _configure_horizontal_scroll_limit(self) -> None:
+        if not self._viewport or not self._has_horizontal_overflow:
+            return
+        terminal_column = self._viewport.suffix_start_for_width(
+            self._text_style.horizontal_advance, self._text_content_width())
+        self._viewport.set_max_column(terminal_column)
+        terminal_text = self._viewport.text_between(
+            terminal_column, self._viewport.current_line_length)
+        self._terminal_text_alignment = max(
+            0.0, self._text_content_width() -
+            self._text_style.horizontal_advance(terminal_text))
+
+    def _text_content_width(self) -> float:
+        # ContentBox clips at x + 8 while normal text starts at x + 10 and
+        # ends at x + width - 4, leaving this precise drawable width.
+        return max(1.0, self._target_width - 14.0)
+
+    def _change_visible_line_count(self, delta: int) -> bool:
+        maximum = min(TEXT_VIEW['max_visible_lines'], self._viewport.line_count)
+        target = maximum if delta > 0 else 1
+        if target == self._visible_line_count:
+            return False
+        if target == 1 and self._timeout_while_expanded:
+            self._exit_after_collapse = True
+        self._visible_line_count = target
+        self._refresh_viewport_text()
+        self._display_text = self._text
+        self._target_width = (self._expanded_width if target > 1
+                              else self._collapsed_width)
+        self._engine.animate(
+            'box_width', self._box_width, self._target_width,
+            TEXT_VIEW['line_expand_duration'],
+            QEasingCurve(QEasingCurve.OutCubic))
+        self._engine.animate(
+            'box_height', self._box_height,
+            self._target_box_height(), TEXT_VIEW['line_expand_duration'],
+            QEasingCurve(QEasingCurve.OutCubic))
+        return True
+
+    def _target_box_height(self) -> float:
+        return float(SIZES['box_height'] + (
+            self._visible_line_count - 1) * self._expanded_line_step())
+
+    def _expanded_line_step(self) -> float:
+        return max(float(TEXT_VIEW['expanded_line_step']),
+                   float(self._text_style.metrics.height()))
+
+    def _max_box_height(self) -> float:
+        if not self._viewport:
+            return float(SIZES['box_height'])
+        maximum = min(TEXT_VIEW['max_visible_lines'], self._viewport.line_count)
+        return float(SIZES['box_height'] + (
+            maximum - 1) * self._expanded_line_step())
+
+    def _on_animation_state_changed(self, state: AnimationState) -> None:
+        self.navigation_active_changed.emit(
+            self.can_navigate_text and state in (
+                AnimationState.BOX_EXPAND, AnimationState.TEXT_REVEAL,
+                AnimationState.IMAGE_APPEAR, AnimationState.STACK_APPEAR,
+                AnimationState.VIEWING, AnimationState.HOLDING))
+
     def move_to_position(self, x, y):
         context = self._build_position_context(x, y)
         self._position_context = context
@@ -174,7 +429,8 @@ class FeedbackWidget(QWidget):
             geometry = screen.geometry()
             normal_right, normal_bottom = visible_content_bounds(
                 self._target_width, self._has_image, self._image_count,
-                image_layout_mode=self._image_layout_mode)
+                image_layout_mode=self._image_layout_mode,
+                box_height=self._box_height)
             normal_x, normal_y = mouse_to_window(
                 x, y, self._ui_scale, *self._cursor_offset, DOT_CY)
             normal_bottom_edge = normal_y + normal_bottom * self._ui_scale
@@ -209,7 +465,8 @@ class FeedbackWidget(QWidget):
         # This only occurs transiently while displays are reconfigured.
         normal_right, normal_bottom = visible_content_bounds(
             self._target_width, self._has_image, self._image_count,
-            image_layout_mode=self._image_layout_mode)
+            image_layout_mode=self._image_layout_mode,
+            box_height=self._box_height)
         normal_x, normal_y = mouse_to_window(
             x, y, self._ui_scale, *self._cursor_offset, DOT_CY)
         return {
@@ -287,7 +544,8 @@ class FeedbackWidget(QWidget):
                        if self._has_image else DOT_CY)
         _, dock_visible_bottom = visible_content_bounds(
             self._target_width, self._has_image, self._image_count,
-            dock_dot_cy, self._has_image, self._image_layout_mode)
+            dock_dot_cy, self._has_image, self._image_layout_mode,
+            self._box_height)
         docked_y = (context['effective_bottom'] - margin -
                     dock_visible_bottom * scale)
 
@@ -356,7 +614,9 @@ class FeedbackWidget(QWidget):
 
     def _resize_to_content(self) -> None:
         self.setFixedSize(*window_size(
-            self._target_width, self._has_image, self._ui_scale))
+            max(self._collapsed_width, self._expanded_width), self._has_image,
+            self._ui_scale,
+            self._max_box_height()))
 
     def _execute_action(self, action):
         dispatch = {
@@ -483,7 +743,13 @@ class FeedbackWidget(QWidget):
         self._sync_engine_properties()
         if (self._position_context is not None and
                 (self._engine.has_active('dock_right_progress') or
-                 self._engine.has_active('dock_bottom_progress'))):
+                 self._engine.has_active('dock_bottom_progress') or
+                 self._engine.has_active('box_width') or
+                 self._engine.has_active('box_height'))):
+            self._position_context = self._build_position_context(
+                self._position_context['mouse_x'],
+                self._position_context['mouse_y'])
+            self._update_dock_targets(self._position_context)
             self._apply_position(self._position_context)
         now_ms = self._engine.now_ms
         self._advance_text_scramble(now_ms)
@@ -501,6 +767,7 @@ class FeedbackWidget(QWidget):
             'vanish_ratio': '_vanish_ratio',
             'dock_right_progress': '_dock_right_progress',
             'dock_bottom_progress': '_dock_bottom_progress',
+            'text_scroll_offset': '_text_scroll_offset',
         }
         for prop, attr in values.items():
             if self._engine.has_active(prop):
@@ -606,11 +873,16 @@ class FeedbackWidget(QWidget):
             self._sm.transition('done')
 
     def _on_prop_finished(self, prop_name):
+        if prop_name == 'box_height' and self._exit_after_collapse:
+            self._exit_after_collapse = False
+            self._timeout_while_expanded = False
+            self.start_exit()
+            return
         state = self._sm.state
         if state == AnimationState.DOT_APPEAR and prop_name == 'dot_scale':
             if self._feedback_type in (FeedbackType.ERROR, FeedbackType.PASTE):
                 self._sm.transition('done_error_paste')
-            elif self._text:
+            elif self._raw_text:
                 self._sm.transition('done_copy_with_text')
             else:
                 self._sm.transition('done_copy_no_text')
@@ -629,13 +901,23 @@ class FeedbackWidget(QWidget):
         if self._sm.state == AnimationState.PULSE:
             self._sm.transition('timeout')
         elif self._sm.state == AnimationState.VIEWING:
+            if self._defer_exit_while_expanded():
+                return
             self._sm.transition('timeout_has_stack' if
                                 self._image_count >= 2 and self._stack_phase == 'visible'
                                 else 'timeout_no_stack')
 
     def _on_holding_timeout(self):
         if self._sm.state == AnimationState.HOLDING:
+            if self._defer_exit_while_expanded():
+                return
             self.start_exit()
+
+    def _defer_exit_while_expanded(self) -> bool:
+        if self._visible_line_count <= 1:
+            return False
+        self._timeout_while_expanded = True
+        return True
 
     def _stop_timed_effects(self):
         self._scramble_start_ms = None
@@ -644,6 +926,14 @@ class FeedbackWidget(QWidget):
         self._scramble_solved_count = 0
         self._scramble_noise_cursor = 0
         self._image_reveal_start_ms = None
+        self._engine.cancel('text_scroll_offset')
+        self._pending_scroll_column = None
+        self._pending_scroll_alignment = 0.0
+        self._text_alignment_offset = 0.0
+        self._queued_scroll_direction = 0
+        self._timeout_while_expanded = False
+        self._exit_after_collapse = False
+        self._text_scroll_offset = 0.0
         self._engine.set_frame_active('text_scramble', False)
         self._engine.set_frame_active('image_reveal', False)
         self._state_timer.stop()
@@ -672,16 +962,26 @@ class FeedbackWidget(QWidget):
         if self._dot_scale > 0.01:
             DotRenderer.paint(painter, dot_cx, dot_cy, self._dot_scale, self._dot_color)
         if self._box_width > 1 and self._box_opacity > 0.01:
+            final_text = self._display_text == self._text
             ContentBox.paint(painter, dot_cx, dot_cy, self._box_width,
                              self._box_height, self._box_opacity,
                              self._display_text, self._dot_scale,
                              self._text_style,
-                             self._final_text_layout if self._display_text == self._text else None,
-                             direction, right_progress)
+                             self._final_text_layout if final_text else None,
+                             direction, right_progress,
+                             viewport_text=self.can_navigate_text,
+                             text_translation_x=(self._text_alignment_offset +
+                                                 self._text_scroll_offset),
+                             display_lines=(self._display_lines if final_text
+                                            else [self._display_text]),
+                             line_layouts=(self._line_layouts if final_text
+                                           else None),
+                             expanded_line_step=self._expanded_line_step())
         if self._has_image:
             image_x, image_y = image_base_pos(
-                dot_cx, dot_cy, self._target_width, direction,
-                bottom_progress >= 0.5, right_progress, bottom_progress)
+                dot_cx, dot_cy, self._box_width, direction,
+                bottom_progress >= 0.5, right_progress, bottom_progress,
+                self._box_height)
             if self._image_layout_mode == IMAGE_LAYOUT_CASCADE:
                 self._paint_cascade_images(
                     painter, image_x, image_y, dot_cx, dot_cy,
@@ -711,7 +1011,7 @@ class FeedbackWidget(QWidget):
             if index > 0 and self._stack_progress <= 0.01:
                 continue
             offset_x = cascade_layer_offset(
-                index, count, right_progress, self._target_width,
+                index, count, right_progress, self._box_width,
                 self._stack_progress)
             layer_opacity = float(opacities[min(index, len(opacities) - 1)])
             if index > 0:

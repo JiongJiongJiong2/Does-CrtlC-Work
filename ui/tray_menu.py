@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from config import COLORS, IMAGE_STACK
 from ui.image_layout import (IMAGE_LAYOUT_CASCADE, IMAGE_LAYOUT_FAN,
                              normalize_image_layout)
 from ui.theme import tray_colors
@@ -182,6 +183,8 @@ class TrayMenuPopup(QMenu):
     language_toggled = Signal(str)
     image_layout_changed = Signal(str)
     palette_changed = Signal(str, str)
+    color_target_changed = Signal(str, str)
+    color_overrides_reset = Signal()
     quit_requested = Signal()
 
     _TEXT = {
@@ -211,6 +214,7 @@ class TrayMenuPopup(QMenu):
         self._language = language if language in self._TEXT else 'zh'
         self._palette_name = 'classic'
         self._custom_color = '#52677f'
+        self._color_overrides = {}
         self._build_ui()
         self.set_language(self._language)
 
@@ -280,6 +284,17 @@ class TrayMenuPopup(QMenu):
         for name, action in self._palette_actions.items():
             action.triggered.connect(lambda checked=False, value=name:
                                      self._choose_palette(value))
+        self._palette_menu.addSeparator()
+        self._color_menu = self._palette_menu.addMenu('')
+        self._color_actions = {}
+        for target in ('menu', 'menu_text', 'content', 'content_text', 'image'):
+            action = self._color_menu.addAction('')
+            action.triggered.connect(
+                lambda checked=False, value=target: self._choose_target_color(value))
+            self._color_actions[target] = action
+        self._color_menu.addSeparator()
+        self._reset_colors_action = self._color_menu.addAction('')
+        self._reset_colors_action.triggered.connect(self._reset_target_colors)
         self.palette_button.setMenu(self._palette_menu)
         layout.addWidget(self.palette_button)
 
@@ -304,10 +319,11 @@ class TrayMenuPopup(QMenu):
         self.feedback_switch.update()
         self.holding_switch.update()
 
-    def set_palette(self, palette, custom_color='#52677f'):
+    def set_palette(self, palette, custom_color='#52677f', color_overrides=None):
         self._palette_name = (palette if palette in ('classic', 'light', 'custom')
                               else 'classic')
         self._custom_color = custom_color or '#52677f'
+        self._color_overrides = dict(color_overrides or {})
         self._refresh_palette_button()
 
     def _apply_theme(self):
@@ -392,7 +408,7 @@ class TrayMenuPopup(QMenu):
     def _refresh_palette_button(self):
         if not hasattr(self, 'palette_button'):
             return
-        label = 'Colour' if self._language == 'en' else '配色'
+        label = 'Theme' if self._language == 'en' else '主题配色'
         values = {
             'classic': 'Classic' if self._language == 'en' else '经典',
             'light': 'Light' if self._language == 'en' else '浅色',
@@ -407,6 +423,21 @@ class TrayMenuPopup(QMenu):
         }
         for name, action in self._palette_actions.items():
             action.setText(('• ' if name == self._palette_name else '') + entries[name])
+        color_label = 'Component colours' if self._language == 'en' else '局部颜色'
+        self._color_menu.setTitle(color_label)
+        color_entries = {
+            'menu': ('Menu background…', '菜单背景…'),
+            'menu_text': ('Menu text…', '菜单文字…'),
+            'content': ('Content box…', '内容框…'),
+            'content_text': ('Content text…', '内容框文字…'),
+            'image': ('Image surface…', '图片底板…'),
+        }
+        for target, action in self._color_actions.items():
+            en, zh = color_entries[target]
+            marker = ' •' if target in self._color_overrides else ''
+            action.setText((en if self._language == 'en' else zh) + marker)
+        self._reset_colors_action.setText(
+            'Reset component colours' if self._language == 'en' else '重置局部颜色')
         colors = tray_colors()
         self._palette_menu.setStyleSheet(
             f'QMenu {{ background: {colors.surface}; color: {colors.text}; border: 0; '
@@ -426,6 +457,38 @@ class TrayMenuPopup(QMenu):
         self._refresh_palette_button()
         self.palette_changed.emit(
             palette, self._custom_color if palette == 'custom' else '')
+
+    def _target_default_color(self, target):
+        if target == 'menu':
+            return tray_colors().surface
+        if target == 'content':
+            red, green, blue, _ = COLORS['box_bg']
+            return QColor(red, green, blue).name()
+        if target == 'menu_text':
+            return tray_colors().text
+        if target == 'content_text':
+            return COLORS['text']
+        red, green, blue, _ = IMAGE_STACK['bg_color']
+        return QColor(red, green, blue).name()
+
+    def _choose_target_color(self, target):
+        from PySide6.QtWidgets import QColorDialog
+        color = QColorDialog.getColor(
+            QColor(self._color_overrides.get(target,
+                                              self._target_default_color(target))),
+            self, 'Choose component colour')
+        if not color.isValid():
+            return
+        self._color_overrides[target] = color.name()
+        self._refresh_palette_button()
+        self.color_target_changed.emit(target, color.name())
+
+    def _reset_target_colors(self):
+        if not self._color_overrides:
+            return
+        self._color_overrides = {}
+        self._refresh_palette_button()
+        self.color_overrides_reset.emit()
 
     def set_state(self, feedback_enabled, holding_enabled,
                   image_layout_mode='fan'):

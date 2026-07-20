@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
@@ -266,6 +267,29 @@ class TrayAndHoldingTests(unittest.TestCase):
         app._on_tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
         self.assertEqual(app.tray_menu.shown, 2)
 
+    def test_first_feedback_registers_navigation_without_waiting_for_a_later_state(self):
+        class Tracker:
+            def start_tracking(self):
+                pass
+
+            def get_current_position(self):
+                return 0, 0
+
+        app = ClipboardFXApp.__new__(ClipboardFXApp)
+        app.silent_mode = False
+        app._current_widget = None
+        app._holding_mode = False
+        app._image_layout_mode = IMAGE_LAYOUT_FAN
+        app.mouse_tracker = Tracker()
+        registrations = []
+        app._set_text_navigation_enabled = registrations.append
+        with patch('main.CursorMetrics.detect', return_value=SimpleNamespace(
+                ui_scale=1.0, offset_x=16, offset_y=16)):
+            ClipboardFXApp._show_feedback(
+                app, FeedbackType.COPY, text='first\nsecond')
+        self.assertTrue(registrations[-1])
+        app._current_widget.stop()
+
     def test_image_layout_setting_is_normalized_persisted_and_synced(self):
         class Settings:
             def __init__(self):
@@ -410,10 +434,11 @@ class TrayAndHoldingTests(unittest.TestCase):
         widget._advance_text_scramble(616)
         self.assertEqual(widget._scramble_buffer[:solved_count], solved_prefix)
 
-    def test_long_cjk_text_elides_and_cached_layout_paints(self):
+    def test_long_cjk_text_uses_bounded_viewport_and_cached_layout_paints(self):
         widget = FeedbackWidget(FeedbackType.COPY, text='中文' * 100)
         self.assertLessEqual(widget._target_width, SIZES['box_max_width'])
-        self.assertTrue(widget._text.endswith('…'))
+        self.assertEqual(len(widget._raw_text), 200)
+        self.assertEqual(len(widget._text), 192)
 
         canvas = QImage(500, 80, QImage.Format_ARGB32)
         canvas.fill(0)

@@ -1,6 +1,7 @@
 """Small, persisted colour palettes shared by feedback and tray surfaces."""
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, replace
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QColor
@@ -12,6 +13,7 @@ PALETTE_CLASSIC = 'classic'
 PALETTE_LIGHT = 'light'
 PALETTE_CUSTOM = 'custom'
 PALETTES = (PALETTE_CLASSIC, PALETTE_LIGHT, PALETTE_CUSTOM)
+COLOR_TARGETS = ('menu', 'menu_text', 'content', 'content_text', 'image')
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,7 @@ _LIGHT_TRAY = TrayColors(
 
 _tray_colors = _DARK_TRAY
 _is_light = False
+_color_overrides = {}
 
 
 def tray_colors() -> TrayColors:
@@ -102,6 +105,76 @@ def _apply_palette(name: str, custom_color: str) -> None:
                        _is_light_color(color))
 
 
+def _valid_overrides(value) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    result = {}
+    for target, color in value.items():
+        if target in COLOR_TARGETS and isinstance(color, str):
+            parsed = QColor(color)
+            if parsed.isValid():
+                result[target] = parsed.name()
+    # Compatibility: versions before the split stored one `text` color.
+    # Preserve its visual intent for both surfaces when users upgrade.
+    legacy_text = value.get('text') if isinstance(value, dict) else None
+    if legacy_text and 'menu_text' not in result and 'content_text' not in result:
+        color = QColor(legacy_text)
+        if color.isValid():
+            result['menu_text'] = color.name()
+            result['content_text'] = color.name()
+    return result
+
+
+def _apply_color_overrides(overrides: dict) -> None:
+    """Apply independently selected surfaces after the base palette."""
+    global _tray_colors
+    overrides = _valid_overrides(overrides)
+
+    if 'menu' in overrides:
+        surface = QColor(overrides['menu'])
+        light = _is_light_color(surface)
+        foreground = QColor('#202020' if light else '#f5f5f5')
+        _tray_colors = replace(
+            _tray_colors, surface=surface.name(),
+            hover=_blend(surface, foreground, 0.09).name(),
+            title=foreground.name(), text=foreground.name(),
+            muted=QColor('#626262' if light else '#9b9b9b').name(),
+            separator=_blend(surface, foreground, 0.28).name(),
+            switch_off=_blend(surface, foreground, 0.35).name(),
+            switch_thumb='#ffffff' if light else '#f7f7f7')
+
+    if 'content' in overrides:
+        color = QColor(overrides['content'])
+        COLORS['box_bg'] = (color.red(), color.green(), color.blue(),
+                            220 if _is_light_color(color) else 217)
+
+    if 'menu_text' in overrides:
+        color = QColor(overrides['menu_text'])
+        _tray_colors = replace(
+            _tray_colors, title=color.name(), text=color.name(),
+            muted=_blend(color, QColor(_tray_colors.surface), 0.42).name())
+
+    if 'content_text' in overrides:
+        color = QColor(overrides['content_text'])
+        COLORS['text'] = color.name()
+
+    if 'image' in overrides:
+        color = QColor(overrides['image'])
+        light = _is_light_color(color)
+        border = QColor('#242424' if light else '#ffffff')
+        border_alpha = 26 if light else 25
+        image_alpha = 220 if light else 232
+        placeholder_alpha = 212 if light else 205
+        IMAGE_STACK.update({
+            'border_color': (border.red(), border.green(), border.blue(), border_alpha),
+            'bg_color': (color.red(), color.green(), color.blue(), image_alpha),
+            'placeholder_border_color': (border.red(), border.green(), border.blue(), border_alpha + 3),
+            'placeholder_bg_color': (color.red(), color.green(), color.blue(), placeholder_alpha),
+            'image_border_color': (border.red(), border.green(), border.blue(), border_alpha + 5),
+            'image_surface_color': (color.red(), color.green(), color.blue(), image_alpha),
+        })
+
+
 class ThemeController(QObject):
     """Persist and apply an app-owned palette; never follows system mode."""
 
@@ -115,7 +188,9 @@ class ThemeController(QObject):
             self._palette = PALETTE_CLASSIC
         self._custom_color = settings.value(
             'custom_palette_color', '#52677f', type=str)
+        self._color_overrides = self._load_color_overrides()
         _apply_palette(self._palette, self._custom_color)
+        _apply_color_overrides(self._color_overrides)
 
     @property
     def palette(self) -> str:
@@ -124,6 +199,27 @@ class ThemeController(QObject):
     @property
     def custom_color(self) -> str:
         return self._custom_color
+
+    @property
+    def color_overrides(self) -> dict:
+        return dict(self._color_overrides)
+
+    def _load_color_overrides(self) -> dict:
+        raw = self._settings.value('color_overrides', '{}', type=str)
+        if isinstance(raw, dict):
+            return _valid_overrides(raw)
+        try:
+            return _valid_overrides(json.loads(raw or '{}'))
+        except (TypeError, json.JSONDecodeError):
+            return {}
+
+    def _save_color_overrides(self) -> None:
+        self._settings.setValue(
+            'color_overrides', json.dumps(self._color_overrides, sort_keys=True))
+
+    def _apply_current_theme(self) -> None:
+        _apply_palette(self._palette, self._custom_color)
+        _apply_color_overrides(self._color_overrides)
 
     def set_palette(self, palette: str, custom_color: str | None = None) -> None:
         palette = palette if palette in PALETTES else PALETTE_CLASSIC
@@ -135,6 +231,31 @@ class ThemeController(QObject):
         self._palette = palette
         self._settings.setValue('color_palette', self._palette)
         self._settings.setValue('custom_palette_color', self._custom_color)
-        _apply_palette(self._palette, self._custom_color)
+        self._apply_current_theme()
         if changed:
             self.theme_changed.emit(self._palette)
+
+    def set_color_override(self, target: str, color: str | None) -> None:
+        if target not in COLOR_TARGETS:
+            return
+        parsed = QColor(color) if color else QColor()
+        if color and not parsed.isValid():
+            return
+        value = parsed.name() if color else None
+        if value == self._color_overrides.get(target):
+            return
+        if value:
+            self._color_overrides[target] = value
+        else:
+            self._color_overrides.pop(target, None)
+        self._save_color_overrides()
+        self._apply_current_theme()
+        self.theme_changed.emit(self._palette)
+
+    def reset_color_overrides(self) -> None:
+        if not self._color_overrides:
+            return
+        self._color_overrides = {}
+        self._save_color_overrides()
+        self._apply_current_theme()
+        self.theme_changed.emit(self._palette)

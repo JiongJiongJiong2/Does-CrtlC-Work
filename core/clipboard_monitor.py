@@ -230,7 +230,7 @@ class ClipboardMonitor(QObject):
             mime_data = clipboard.mimeData()
             if not mime_data:
                 return None
-            text = (mime_data.text() or '').replace('\r', '') if mime_data.hasText() else ''
+            text = (mime_data.text() or '').replace('\r\n', '\n').replace('\r', '\n') if mime_data.hasText() else ''
             has_image = mime_data.hasImage()
             has_urls = mime_data.hasUrls()
             has_html = mime_data.hasHtml()
@@ -329,6 +329,7 @@ class ClipboardMonitor(QObject):
 
     @staticmethod
     def _trunc(text):
+        # This is a UI preview cap, not a mutation of the real clipboard.
         return text if len(text) <= MAX_TEXT_LENGTH else text[:MAX_TEXT_LENGTH - 1] + '…'
 
     @staticmethod

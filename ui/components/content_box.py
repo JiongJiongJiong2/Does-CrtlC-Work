@@ -13,7 +13,11 @@ class ContentBox:
               box_width: float, box_height: float, box_opacity: float,
               display_text: str, dot_scale: float, text_style: TextStyle,
               final_layout: QStaticText = None, direction: int = 1,
-              mirror_progress: float = None) -> None:
+              mirror_progress: float = None,
+              viewport_text: bool = False,
+              text_translation_x: float = 0.0,
+              display_lines=None, line_layouts=None,
+              expanded_line_step: float = None) -> None:
         if box_width <= 0:
             return
         if mirror_progress is None:
@@ -56,11 +60,12 @@ class ContentBox:
                              int(dot_cx), int(box_y + box_height))
         painter.restore()
 
-        if display_text and box_width > 20:
+        lines = display_lines if display_lines is not None else [display_text]
+        if any(lines) and box_width > 20:
             painter.setPen(QColor(COLORS['text']))
             painter.setFont(text_style.font)
             normal_text_x = box_x + 10
-            if mirror_progress <= 0.0:
+            if viewport_text or mirror_progress <= 0.0:
                 text_x = normal_text_x
             else:
                 text_width = (final_layout.size().width()
@@ -70,13 +75,27 @@ class ContentBox:
                     box_x + 8, box_x + box_width - 10 - text_width)
                 text_x = normal_text_x + (
                     mirrored_text_x - normal_text_x) * mirror_progress
-            text_top = box_y + (box_height - text_style.metrics.height()) / 2
             painter.save()
             painter.setClipRect(int(box_x + 8), int(box_y),
                                 max(0, int(box_width - 12)), int(box_height))
-            if final_layout is not None:
-                painter.drawStaticText(QPointF(text_x, text_top), final_layout)
-            else:
-                baseline = text_top + text_style.metrics.ascent()
-                painter.drawText(QPointF(text_x, baseline), display_text)
+            line_step = (SIZES['box_height'] if expanded_line_step is None
+                         else max(float(expanded_line_step),
+                                  float(text_style.metrics.height())))
+            first_line_top = box_y + (
+                SIZES['box_height'] - text_style.metrics.height()) / 2
+            for index, line in enumerate(lines):
+                if not line:
+                    continue
+                text_top = first_line_top + index * line_step
+                layout = (line_layouts[index] if line_layouts and
+                          index < len(line_layouts) else
+                          (final_layout if index == 0 else None))
+                # Expanded text is one viewport: horizontal navigation must
+                # translate every visible row together, not just the first.
+                row_x = text_x + text_translation_x
+                if layout is not None:
+                    painter.drawStaticText(QPointF(row_x, text_top), layout)
+                else:
+                    baseline = text_top + text_style.metrics.ascent()
+                    painter.drawText(QPointF(row_x, baseline), line)
             painter.restore()

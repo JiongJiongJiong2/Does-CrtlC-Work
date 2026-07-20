@@ -7,7 +7,7 @@ import sys
 import keyboard
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
-from PySide6.QtCore import Qt, QSettings
+from PySide6.QtCore import Qt, QSettings, QObject, Signal
 
 from config import COLORS, SIZES
 from core.cursor_metrics import CursorMetrics
@@ -17,6 +17,12 @@ from ui.feedback_widget import FeedbackWidget, FeedbackType
 from ui.image_layout import normalize_image_layout
 from ui.tray_menu import create_tray_menu
 from ui.theme import ThemeController
+
+
+class _NavigationBridge(QObject):
+    """Move keyboard-hook callbacks onto Qt's GUI thread."""
+
+    requested = Signal(str)
 
 
 class ClipboardFXApp:
@@ -53,6 +59,10 @@ class ClipboardFXApp:
 
         # 当前活动的反馈窗口
         self._current_widget = None
+        self._navigation_hotkeys = []
+        self._navigation_bridge = _NavigationBridge(self.app)
+        self._navigation_bridge.requested.connect(
+            self._on_text_navigation_requested)
         
         # 当前鼠标位置
         self._mouse_x = 0
@@ -79,10 +89,13 @@ class ClipboardFXApp:
         self.tray_menu.language_toggled.connect(self._set_language)
         self.tray_menu.image_layout_changed.connect(self._set_image_layout_mode)
         self.tray_menu.palette_changed.connect(self._set_palette)
+        self.tray_menu.color_target_changed.connect(self._set_color_target)
+        self.tray_menu.color_overrides_reset.connect(self._reset_color_overrides)
         self.tray_menu.quit_requested.connect(self._quit)
         if hasattr(self, 'theme_controller'):
             self.tray_menu.set_palette(self.theme_controller.palette,
-                                       self.theme_controller.custom_color)
+                                       self.theme_controller.custom_color,
+                                       self.theme_controller.color_overrides)
         # Do not use QSystemTrayIcon's automatic context-menu path: on Windows
         # it activates the Qt top-level popup and retracts Explorer's hidden-
         # icons flyout immediately. Both mouse entries are handled below.
@@ -127,7 +140,20 @@ class ClipboardFXApp:
     def _set_palette(self, palette: str, custom_color: str = ''):
         self.theme_controller.set_palette(palette, custom_color or None)
         self.tray_menu.set_palette(self.theme_controller.palette,
-                                   self.theme_controller.custom_color)
+                                   self.theme_controller.custom_color,
+                                   self.theme_controller.color_overrides)
+
+    def _set_color_target(self, target: str, color: str):
+        self.theme_controller.set_color_override(target, color)
+        self.tray_menu.set_palette(self.theme_controller.palette,
+                                   self.theme_controller.custom_color,
+                                   self.theme_controller.color_overrides)
+
+    def _reset_color_overrides(self):
+        self.theme_controller.reset_color_overrides()
+        self.tray_menu.set_palette(self.theme_controller.palette,
+                                   self.theme_controller.custom_color,
+                                   self.theme_controller.color_overrides)
 
     def _on_theme_changed(self, palette: str):
         """Refresh custom-painted surfaces after an in-app palette change."""
@@ -138,6 +164,35 @@ class ClipboardFXApp:
     def _on_copy_success(self, text: str, images=None, image_count: int = 0):
         """复制成功回调"""
         self._show_feedback(FeedbackType.COPY, text, images=images, image_count=image_count)
+
+    def _on_text_navigation_requested(self, direction: str):
+        if self._current_widget and self._current_widget._active:
+            self._current_widget.navigate_text(direction)
+
+    def _set_text_navigation_enabled(self, enabled: bool):
+        if enabled:
+            self._register_navigation_hotkeys()
+        else:
+            self._remove_navigation_hotkeys()
+
+    def _register_navigation_hotkeys(self):
+        if self._navigation_hotkeys:
+            return
+        for direction in ('left', 'right', 'up', 'down'):
+            handle = keyboard.add_hotkey(
+                direction,
+                lambda key=direction: self._navigation_bridge.requested.emit(key),
+                suppress=True,
+                trigger_on_release=False)
+            self._navigation_hotkeys.append(handle)
+
+    def _remove_navigation_hotkeys(self):
+        for handle in getattr(self, '_navigation_hotkeys', []):
+            try:
+                keyboard.remove_hotkey(handle)
+            except (KeyError, ValueError):
+                pass
+        self._navigation_hotkeys = []
 
     def _on_images_updated(self, images, image_count: int):
         """异步图片到达回调（Bug 3: 延迟图片支持）"""
@@ -168,6 +223,7 @@ class ClipboardFXApp:
 
         # 如果有正在进行的动画，先停止
         if self._current_widget:
+            self._remove_navigation_hotkeys()
             self._current_widget.stop()
             self._current_widget.deleteLater()
 
@@ -184,6 +240,8 @@ class ClipboardFXApp:
             image_layout_mode=getattr(self, '_image_layout_mode', 'fan'),
         )
         self._current_widget.animation_complete.connect(self._on_animation_complete)
+        self._current_widget.navigation_active_changed.connect(
+            self._set_text_navigation_enabled)
         
         # 反馈出现时才开始追踪，空闲期不保留高频计时器。
         self.mouse_tracker.start_tracking()
@@ -192,8 +250,14 @@ class ClipboardFXApp:
         
         # 开始动画
         self._current_widget.start_animation()
+        # The entry state has now emitted its initial inactive signal. Register
+        # immediately afterwards so the first copied text does not wait for a
+        # later state transition before its arrow-key listener exists.
+        self._set_text_navigation_enabled(
+            self._current_widget.can_navigate_text)
         
     def _on_animation_complete(self):
+        self._remove_navigation_hotkeys()
         """动画完成回调"""
         if self._current_widget:
             self._current_widget.deleteLater()
@@ -220,6 +284,7 @@ class ClipboardFXApp:
         self.silent_mode = not bool(enabled)
         self._settings.setValue('feedback_enabled', not self.silent_mode)
         if self.silent_mode and self._current_widget:
+            self._remove_navigation_hotkeys()
             self._current_widget.stop()
             self._current_widget.deleteLater()
             self._current_widget = None
@@ -269,6 +334,7 @@ class ClipboardFXApp:
         return self.app.exec()
         
     def _quit(self):
+        self._remove_navigation_hotkeys()
         """退出应用"""
         keyboard.unhook_all_hotkeys()  # 先移除所有热键，避免重复触发
         self.mouse_tracker.stop_tracking()

@@ -26,7 +26,8 @@ def edge_dock_required(visible_edge: float, boundary: float,
     return visible_edge > boundary - margin
 
 
-def window_size(target_width: float, has_image: bool, ui_scale: float = 1.0) -> tuple:
+def window_size(target_width: float, has_image: bool, ui_scale: float = 1.0,
+                box_height: float = None) -> tuple:
     """计算窗口尺寸
 
     Returns:
@@ -36,7 +37,8 @@ def window_size(target_width: float, has_image: bool, ui_scale: float = 1.0) -> 
     image_w = ImageRenderer.IMAGE_BOX_SIZE + 60 if has_image else 0
     max_w = max(content_w, image_w, 220)
 
-    max_h = int(SIZES['box_height'] + SIZES['dot_radius'] * 2 + 30)
+    content_height = box_height if box_height is not None else SIZES['box_height']
+    max_h = int(content_height + SIZES['dot_radius'] * 2 + 30)
     if has_image:
         max_h += ImageRenderer.IMAGE_BOX_SIZE + 20
 
@@ -48,7 +50,8 @@ def window_size(target_width: float, has_image: bool, ui_scale: float = 1.0) -> 
 def image_base_pos(dot_cx: float, dot_cy: float, target_width: float,
                    direction: int = 1, image_above: bool = False,
                    horizontal_progress: float = None,
-                   vertical_progress: float = None) -> tuple:
+                   vertical_progress: float = None,
+                   box_height: float = None) -> tuple:
     """计算图片区域基准位置
 
     Returns:
@@ -62,7 +65,8 @@ def image_base_pos(dot_cx: float, dot_cy: float, target_width: float,
     vertical_progress = max(0.0, min(float(vertical_progress), 1.0))
 
     base_x = dot_cx - ImageRenderer.IMAGE_BOX_SIZE * horizontal_progress
-    below_offset = SIZES['box_height'] + 8 if target_width > 0 else 8
+    content_height = box_height if box_height is not None else SIZES['box_height']
+    below_offset = content_height + 8 if target_width > 0 else 8
     above_offset = -ImageRenderer.IMAGE_BOX_SIZE - 8
     base_y = dot_cy + below_offset + (
         above_offset - below_offset) * vertical_progress
@@ -105,7 +109,8 @@ def clamp_window_position(x: int, y: int, width: int, height: int,
 def visible_content_bounds(target_width: float, has_image: bool,
                            image_count: int = 0, dot_cy: float = DOT_CY,
                            image_above: bool = False,
-                           image_layout_mode: str = 'fan') -> tuple[float, float]:
+                           image_layout_mode: str = 'fan',
+                           box_height: float = None) -> tuple[float, float]:
     """Return the normal-direction visible right/bottom edges in logical px.
 
     The QWidget canvas deliberately has generous transparent space for
@@ -117,11 +122,13 @@ def visible_content_bounds(target_width: float, has_image: bool,
     bottom = dot_cy + dot_extent
     if target_width > 0:
         right = max(right, DOT_CX + target_width)
-        bottom = max(bottom, dot_cy + SIZES['box_height'])
+        content_height = box_height if box_height is not None else SIZES['box_height']
+        bottom = max(bottom, dot_cy + content_height)
     if has_image:
         mode = normalize_image_layout(image_layout_mode)
         image_x, image_y = image_base_pos(
-            DOT_CX, dot_cy, target_width, image_above=image_above)
+            DOT_CX, dot_cy, target_width, image_above=image_above,
+            box_height=box_height)
         if mode == IMAGE_LAYOUT_CASCADE:
             stack_layers = min(max(image_count - 1, 0), 3)
             stack_x = cascade_layer_distance(

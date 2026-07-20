@@ -9,6 +9,7 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 
+from config import MAX_TEXT_LENGTH
 from core.clipboard_monitor import ClipboardMonitor, _ImageDataWorker
 
 
@@ -61,6 +62,12 @@ class ClipboardMonitorTests(unittest.TestCase):
         self.assertIsNone(self.monitor._pending_copy_sequence)
         self.assertFalse(self.monitor._confirmation_timer.isActive())
         self.assertEqual(len(received), 1)
+
+    def test_preview_cap_is_bounded_without_mutating_short_text(self):
+        text = 'x' * (MAX_TEXT_LENGTH + 20)
+        preview = self.monitor._trunc(text)
+        self.assertEqual(len(preview), MAX_TEXT_LENGTH)
+        self.assertTrue(preview.endswith('…'))
 
 
 class ImageWorkerTests(unittest.TestCase):
