@@ -19,10 +19,12 @@
 ## Features
 
 - **Copy Success (Text)** — Yellow indicator dot + expanding panel with scramble-text reveal.
+- **Text Viewport Navigation** — Long copied text stays bounded inside the panel: `←` / `→` smoothly pan by pixels, while `↓` expands to inspect additional lines and `↑` collapses them again.
 - **Copy Success (Image)** — 120×120 rounded thumbnail with pixel-style reveal animation.
 - **Multi-Image Layouts** — Choose the original three-image fan or a four-image horizontal cascade from the tray's compact text selector; the selected mode is remembered.
 - **Holding Mode** — Copy feedback stays on screen until `Ctrl+V` is detected or a timeout is reached. It represents a paste-key intent, not a system-wide guarantee that the target app accepted the paste.
-- **Parallel Image Loading** — Web images are downloaded concurrently (up to 3 threads), reducing wait time for multi-image clipboard content.
+- **Clipboard-first Image Loading** — Browser-provided `image/*` bytes are snapshotted before any URL fetch; file/data-URI sources follow, and web-image download is a bounded final fallback.
+- **Resilient Web Image Fallback** — Up to three concurrent background tasks, two bounded download attempts, size limits, and diagnostic logs keep slow or protected web images from blocking the UI.
 - **Image Exit Animation** — Thumbnail shrinks toward the yellow indicator dot and disappears in sync with text collapse.
 - **Web Image Compatibility** — Supports clipboard image extraction from:
   - Direct bitmap (`image/*`)
@@ -34,6 +36,7 @@
 - **Silent Mode** — Toggle visual feedback on/off while app keeps running in tray (`Ctrl+Shift+M`).
 - **Cursor-bound** — Animation follows your mouse directly, no delay.
 - **System Tray Resident** — Background running with quick status and exit control.
+- **Per-surface Styling** — Independently configure menu background/text, content background/text, image surface, plus separate English and Chinese feedback fonts.
 
 <p align="center">
   <img src="gif/Does-CtrlC-Work-recording.gif" alt="Does-CtrlC-Work-recording">
@@ -101,21 +104,20 @@ Output exe location: `dist/DoesCtrlCWork.exe`.
 
 ## Release History
 
-### v2.2.0 — Native Windows Feedback, Cursor Scaling, and Palette Support
+### v2.3.0 — Text Viewport, Clipboard Image Reliability, and Typography
 
-This release consolidates the recent Windows interaction, animation, and packaging work.
+This release contains the text-navigation, clipboard-image reliability, styling, and animation improvements introduced by the current feature branch.
 
 **Highlights**
 
-- Native rounded tray menu with persistent language/switch settings and better hidden-icons flyout dismissal.
-- Cursor-size-aware feedback placement with taskbar-aware bottom docking and smooth screen-edge transitions.
-- Fan and horizontal Cascade layouts for multi-image copies, up to four images, with clearer spacing and mirrored edge behaviour.
-- Classic dark, Light glass, and Custom palettes for the menu, text panel, image placeholders, and stack surfaces.
-- Direct clipboard bitmap feedback with asynchronous file/data-URI/web-image fallback loading.
-- Image and placeholder exit animations now shrink and fade in sync with the text feedback.
-- Leaner PyInstaller packaging through the checked-in spec and removal of unused assets.
+- Long copied text now uses a bounded viewport instead of expanding the feedback panel indefinitely. Horizontal arrow input pans smoothly as one shared column; vertical input reveals up to five compact text rows for inspection.
+- Expanded text remains visible until the user collapses it. If its normal display timer has already elapsed, collapsing it completes the exit animation instead of dismissing content prematurely.
+- Short text panels now use their measured content width, while longer lines retain a fixed readable viewport without blank trailing space at the scroll limit.
+- Clipboard images now prefer the local bitmap or raw `image/png/jpeg/webp/gif/bmp/tiff` MIME bytes already supplied by the clipboard. HTML, file, data-URI, and remote URL sources remain ordered fallbacks.
+- Remote image URLs run only in background workers, with a 3-second per-attempt timeout, one limited retry, a 2 MB per-image limit, and structured diagnostics at `%LOCALAPPDATA%\\DoseCtrlC\\dose-ctrlc.log`.
+- Tray settings now expose independent colours for menu/content/image surfaces and independent English/Chinese feedback font pickers. Both persist across restarts.
+- Right-edge docking now uses a longer S-curve transition and a 4 ms active motion clock for smoother yellow-dot and anchor-line movement; timers stop while idle.
 
-See the complete release notes in [docs/releases/V2.2.0.md](docs/releases/V2.2.0.md).
 
 
 
@@ -132,6 +134,36 @@ See the complete release notes in [docs/releases/V2.2.0.md](docs/releases/V2.2.0
 | keyboard | Global hotkey listener |
 | PyInstaller | Windows executable packaging |
 
+## Project Architecture
+
+```text
+Global hotkeys + clipboard change event
+                 │
+                 ▼
+       ClipboardMonitor (core)
+  snapshot text / QImage / raw MIME bytes
+  file path / data URI / HTML image URLs
+                 │
+                 ├── local resources ──► background byte worker ──► QImage decode
+                 └── remote URLs ──────► bounded download fallback
+                 │
+                 ▼
+       ClipboardFXApp (main.py)
+  settings, tray commands, navigation-hotkey bridge
+                 │
+                 ▼
+          FeedbackWidget (ui)
+  property animation engine + cursor docking + text viewport
+                 │
+                 ▼
+  Dot / ContentBox / image renderers / image layouts
+```
+
+- `ClipboardMonitor` takes a bounded snapshot as soon as clipboard ownership changes, so browser-provided raw image data is not lost before background work begins.
+- `FeedbackWidget` owns the short-lived visual lifecycle. `PropertyEngine` advances active animations on a precise timer and stops it when there is no active animation or frame client.
+- `TextViewport` retains the full copied text but only renders a small visible slice, avoiding layout and allocation costs for long clipboard content.
+- `ThemeController` and `QSettings` persist palettes, component colour overrides, image-layout preference, and language-specific feedback fonts.
+
 ## File Structure
 
 ```text
@@ -144,9 +176,17 @@ dose-ctrlc/
 ├── build.bat                 # Build script
 ├── core/
 │   ├── mouse_tracker.py      # Global cursor tracking + spring physics
-│   └── clipboard_monitor.py  # Ctrl+C/V detection + rich clipboard extraction
+│   └── clipboard_monitor.py  # Clipboard snapshots + rich image extraction/fallbacks
 └── ui/
-    └── feedback_widget.py    # Dot/text/image animation lifecycle
+    ├── animation/
+    │   └── property_engine.py # Active animation frame clock and interpolation
+    ├── components/            # Dot, content box, and image renderers
+    ├── feedback_widget.py     # Dot/text/image lifecycle + edge docking
+    ├── text_viewport.py       # Bounded long-text navigation model
+    ├── text_style.py          # Script-aware text fonts, metrics, and layouts
+    ├── theme.py               # Palette and component-colour persistence
+    ├── tray_menu.py           # Qt tray popup
+    └── windows_tray_menu.py   # Native Windows owner-drawn tray menu
 ```
 
 ## License
