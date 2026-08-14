@@ -6,6 +6,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [当前项目事实与演进总览](CURRENT_PROJECT_FACTS.md) | 当前 HEAD 的优先事实源、风险分级、证据边界和推荐路线 |
 | [打包瘦身指南](PACKAGING.md) | 当前体积审计、构建实验顺序、验收清单 |
 | [鼠标尺寸自适应方案](CURSOR_SCALING.md) | Windows 光标尺寸读取、缩放上限、防错位策略与验收 |
 | [技术审查与当前状态](planning711/PROJECT_REVIEW.md) | 架构结论、已完成工作、后续优先级 |

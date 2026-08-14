@@ -241,3 +241,15 @@
 - cascade 绘制偏移将乘入已有 `_stack_progress`。该进度由 `spring_ease(stiffness=180,damping=14)` 驱动，因而初次展开会从重叠状态弹性展开，右侧 dock 的 per-layer 错峰只负责镜像方向，不另建动画时钟。
 - Phase 29 实现验证：`TPM_NOANIMATION` 与同 HMENU 重进组合可避免 Windows 原生菜单每次重新打开时播放系统开合动画；这解决了明显闪一下的问题，但由于 Win32 command 语义仍会结束一次 `TrackPopupMenuEx`，真实桌面仍需确认是否存在不可避免的单帧重绘。
 - 本轮新增的 PowerShell 分段读取脚本曾因数组边界类型混用报“参数类型不匹配”，没有改动产品文件；后续改用逐文件、逐范围读取完成审查。
+
+### 2026-08-14: Current baseline audit findings
+
+- 当前基线为 `5bd31d278c267dcf988acca89306346db1db1d08`。审查开始时 `master` 工作树干净，和当时本地缓存的 `origin/master` 一致；文档发布前执行 `git fetch origin master`，确认本地与刷新后的远端分歧为 `0/0`。
+- 当前源码静态包含 81 个 `unittest` 测试方法：动画/托盘 25、光标/DPI/布局 24、文本视口 16、剪贴板 10、主题 6。本轮没有运行测试或构建，旧文档中的 12/15/41/51/52/53 项通过记录均是历史阶段证据。
+- `keyboard` 0.13.5 的 `add_hotkey` callback 异步运行在独立线程。Ctrl+C/V 和导航通过 Qt signal 转移线程，但 `_quit`、Silent、Holding 快捷键直接触碰 Qt、托盘和 QSettings，构成当前最高优先级的运行时风险之一。
+- `_cancel_image_workers()` 只设置 Event；已经执行的 `urlopen` 不会被中断，`ThreadPoolExecutor` 上下文退出仍会等待任务。快速连续复制会保留旧 worker，应用退出也没有有界等待。
+- HTML `<img>` 的 HTTP(S) 来源会自动下载。远程响应有 2 MiB 限制，但没有私网/loopback/重定向策略；文件 `read()` 和 data URI 解码没有同一字节上限。该问题同时涉及隐私、局域网访问和内存预算。
+- 图片数量上限存在组合边界：worker 可以先加入 raw bytes 后再读取 `max_images` 个文件；widget 每次只裁剪传入列表，而不是按已有缓存总数裁剪。
+- README 使用 v2.3.0 产品描述，`version.txt` 仍写 1.0.1.0。`build.bat` 使用 PATH 中的 Python；本地环境实际为 PySide6 6.11.1、keyboard 0.13.5、PyInstaller 6.21.0，但 requirements 没有锁定这些版本。
+- 其他维护风险包括：全局方向键 `suppress=True`、常驻日志无轮转、没有单实例保护、无 CI/lint/type-check、`FeedbackWidget`/Windows tray menu 职责偏重，以及未使用 signal/字段/旧 `ScrambleText` 模块。
+- 当前优先路线不是重写或扩展云功能，而是先修线程边界、worker shutdown、网络/输入预算、日志轮转、单实例和版本源，再建立 Windows 发布验证。

@@ -264,3 +264,30 @@ P0 动画运行时错误与状态路径
 - 已完成：scramble 刷新由 33ms 改为 16ms，与窗口帧时钟同频；使用持久化字符缓冲，已解码前缀不再反复随机，前沿 block 和远端少量噪声增量更新。
 - 自动验证：离屏测试 15/15 通过，覆盖 16ms 刷新、缓冲长度和已解码前缀稳定性；`compileall` 与 `git diff --check` 通过。
 - 未完成：在真实 Windows 桌面确认 ASCII block 的视觉连续性及实际帧耗时。
+
+## 9. 当前基线追加审查（2026-08-14）
+
+本节只追加最新事实，不删除或重写前面的历史审查。当前优先事实源已单独整理为 [`docs/CURRENT_PROJECT_FACTS.md`](../CURRENT_PROJECT_FACTS.md)。前文记录的 12/15 项测试和 2026-07-13 打包数据属于当时的实施证据，不能直接代表当前 HEAD。
+
+### 当前事实
+
+- 审查基线为 `5bd31d278c267dcf988acca89306346db1db1d08`；审查开始时 `master` 工作树干净，并与当时本地缓存的 `origin/master` 一致。文档发布前执行 `git fetch origin master`，确认分歧为 `0/0`。
+- 当前测试源码静态包含 81 个 `unittest` 测试方法；本轮只读审查没有运行测试、构建或真实桌面验收，因此不声明这些测试当前已经通过。
+- 当前剪贴板事实源是 `QClipboard.dataChanged`，Windows sequence number 用于去重；Ctrl+C 只关联 pending intent，Ctrl+V 只代表粘贴按键意图。
+- README 描述 v2.3.0，但 `version.txt` 仍为 1.0.1.0；当前构建元数据不一致。
+
+### 新增风险结论
+
+| 优先级 | 风险 | 当前事实 |
+|---|---|---|
+| P1 | Qt 线程边界 | `keyboard` hotkey callback 异步运行；退出、Silent、Holding 回调仍直接操作 Qt/QSettings，仅 Ctrl+C/V 和文字导航使用 signal bridge |
+| P1 | worker 生命周期 | 图片 worker 的取消只设置 Event，无法中断 `urlopen`，退出时没有有界等待 QThread/线程池结束 |
+| P1 | 网络与资源边界 | HTML 图片会自动请求任意 HTTP(S) URL；未限制私网/loopback，文件和 data URI 没有与远程响应一致的大小预算 |
+| P1 | 发布身份 | README v2.3.0 与 exe 资源 1.0.1.0 不一致 |
+| P2 | 输入干扰 | 长文本导航使用 `suppress=True` 的全局方向键 |
+| P2 | 常驻维护 | 日志不轮转、无单实例保护、依赖未锁定、无 CI/lint/type-check |
+| P2 | 结构债务 | `FeedbackWidget` 与 Windows tray menu 体积较大，并存在遗留 signal、字段和未调用模块 |
+
+### 最新路线建议
+
+当前没有静态可确认的 P0。下一阶段应先完成线程安全、worker shutdown、远程图片策略与统一输入预算、日志轮转、单实例和版本统一；然后建立锁定依赖、Windows CI 与真实桌面验收矩阵。完成这些基线后，再选择反馈强度、按应用启停、隐私模式或无障碍反馈等产品演进，不优先扩展为云同步或完整剪贴板历史工具。

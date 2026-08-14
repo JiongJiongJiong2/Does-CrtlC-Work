@@ -376,3 +376,13 @@
 - cascade 默认层差从 20 调整为 24 DIP；`cascade_step(target_width, count)` 在内容框足够宽时限制图片组足迹，短文本保留 20 DIP 最小层差；每层偏移乘入已有 `_stack_progress`，因此初次展开沿用原 stack 的 spring 弹性，右侧 dock 的错峰反转保持不变。
 - 资源仍保留在 `assets/image_layout/` 作为 Phase 28 设计来源，但不再被 `.spec` 收集或由运行时加载；这次文字选择器更适合原生菜单尺寸，也减少了成品无用资源。
 - 验证结果：完整离屏测试 51/51、`compileall`、`git diff --check` 通过；新 one-file 构建成功，`DoesCtrlCWork.exe` 为 27,211,938 bytes，归档检索不到 `assets/image_layout`、`Qt6Svg` 或 `qsvg`。真实 Windows 菜单重进的主观闪烁和 Shell 隐藏图标栏组合仍需手动确认。
+
+### Phase 34: 当前事实源与总览报告同步
+
+- **Status:** complete（文档完成；Git 提交与远端同步紧随本记录执行）
+- **Started/Completed:** 2026-08-14
+- 以 `5bd31d278c267dcf988acca89306346db1db1d08` 为基线完成只读源码审查；确认审查开始时工作树干净，测试源码静态包含 81 个测试方法。
+- 本轮没有运行测试、构建或真实 Windows 桌面验收；报告明确保留该证据边界，不复用历史测试数量作为当前通过结论。
+- 已向 `PROJECT_REVIEW.md`、`findings.md` 和本日志追加当前事实；新增 `docs/CURRENT_PROJECT_FACTS.md`，并在 `docs/README.md` 增加入口。
+- 当前新增 P1 结论为 Qt hotkey 线程边界、图片 worker shutdown、自动网络请求/输入预算和版本元数据不一致；P2 包括全局方向键抑制、日志轮转、单实例、发布工程和模块职责债务。
+- Markdown 相对链接目标、尾随空白和 diff 范围检查通过；待提交范围严格限定为本轮六个 Markdown 文件。
