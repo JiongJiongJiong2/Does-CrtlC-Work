@@ -2,6 +2,12 @@
 
 > 2026-11-03 更新：v2.3.1 的可取消预览服务使用 QtNetwork，spec 已恢复 QtNetwork 与 TLS 插件。下文的 7 月体积表及 v3 裁剪是历史实验，不能继续照此排除网络运行时。构建使用 `.venv`、`requirements-build.txt` 和 `build.bat`；版本从 `app_version.py` 生成。
 
+当前 `feature/device-transfer` 增加 Windows 原生自动发现。WinRT 依赖带 Windows 平台标记，spec 使用其官方 PyInstaller hook，并检查六张动态投影表和运行时 `.pyd` 均被收集。`requirements-transfer.txt` 是内部传输协议实验依赖，不是用户配置设备的步骤。
+
+本轮实际冻结启动发现一个仅靠构建成功无法识别的问题：PyInstaller 从构建环境的第三方 Poppler PATH 误收 `icuuc.dll`，覆盖了 Qt 预期的 Windows 系统 ICU。Qt 需要的 20 个无版本后缀符号，在误收 DLL 中全部缺失，因而导入 `QtWidgets` 直接失败。spec 应排除这些第三方 ICU 文件，让 Windows 加载自己的 ICU；不能让用户复制不匹配的 DLL 来修补。Microsoft 从 Windows 10 1703 起提供系统 ICU C API。[Microsoft：Windows ICU](https://learn.microsoft.com/en-us/windows/win32/intl/international-components-for-unicode--icu-)
+
+开发者可以用新 exe 的 `--smoke-test` 做一次 10 秒正常启动与退出检查；它使用单独的测试锁和 `dose-ctrlc-smoke.log`，不会退出已有应用。正常用户启动不需要任何参数。该检查覆盖冻结依赖、后台发现和退出，不代替双机互通或全部桌面动画的人工验收。
+
 ## 结论
 
 当前 `dist/DoesCtrlCWork.exe` 是 45.73 MiB 的旧 PyInstaller onefile 产物（2026-06-17）。体积主要来自 Python 运行时与 PySide6/Qt，不是业务 Python 代码。它甚至仍带有已经移除的 `pyperclip` 构建痕迹，因此必须先从当前代码重建基线，不能把旧 exe 当作发布候选。
@@ -54,7 +60,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m PyInstaller --noconfirm --clean DoesCtrlCWork.spec
 ```
 
-将输出的大小、Python/PySide6/PyInstaller 版本写入发布记录。当前开发机为 Python 3.14.4、PySide6 6.11.1、PyInstaller 6.20.0；旧包没有使用 UPX（系统 PATH 中没有 `upx`）。
+将输出的大小、Python/PySide6/PyInstaller 版本写入发布记录。当前开发机为 Python 3.14.4、PySide6 6.11.1、PyInstaller 6.21.0；旧包没有使用 UPX（系统 PATH 中没有 `upx`）。
 
 ### 2. 从低风险项开始逐组排除
 

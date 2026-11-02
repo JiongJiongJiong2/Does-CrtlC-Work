@@ -1,6 +1,6 @@
 # 跨平台与核心逻辑评估
 
-目标：理解源码和历史，评估 Windows 开发条件下的桌面跨平台、iPhone 配套端及未来蓝牙短文本设想。当前只做调查、验证和建议，不修改产品实现。
+目标：理解源码和历史，评估 Windows 开发条件下的跨平台与 iPhone 配套端；按追加授权先修复并推送，再开发无配置的 Windows 蓝牙自动发现基础。最初的只读调查阶段已结束。
 
 ## 阶段
 1. 历史与当前架构核对 — complete
@@ -16,15 +16,18 @@
 Apple 文档 Markdown 链接被检索工具以 content-type 拒绝，使用可读官方网页摘要及其他官方指南核对。freedesktop GitLab 页面遇到反爬，Wayland 约束改用 Qt 官方文档及官方 Portal 文档核实。
 Qt 6.11 iOS 部署页不可访问，不据此断言支持状态；报告只引用成功读取的当前 6.12 文档并明确区分仓库安装的 6.11.1。
 
-## 交付
+## 第一阶段交付（历史记录）
 docs/CROSS_PLATFORM_REVIEW.md，更新 docs/README.md 入口；本目录保留分析记录、81 项既有测试日志、四项隔离复现脚本与日志。没有更改产品实现。平台迁移与蓝牙属于未来建议，未标记为已实施。
 
 ## 用户追加授权：修复、推送、设备传输扩展
 用户明确要求先修理本轮发现的问题并 push，然后开始蓝牙扩展；同时调查设备现实方位、屏幕边缘拖放选择和对端同款动画。
 
 5. 修复事件会话、Qt线程、预览任务和输入/资源边界，补回归 — complete
-6. 检查修复、提交并推送远端，核实远端SHA — in_progress
+6. 检查修复、提交并推送远端，核实远端SHA — complete
 7. 调查空间定位与iOS边界，定义可用的设备传输交互 — complete
-8. 开发文本传输与边缘投放的首个可测试增量，验证并交付 — pending
+8. 按最新要求撤下手工配置 UI，开发自动蓝牙发现首个增量，验证并交付 — complete
+9. 专项子agent调查两台Windows的相对位置/屏幕朝向及隔墙Wi-Fi开源启发 — complete
 
-职责：core_audit负责ClipboardMonitor与会话测试；history_architecture负责预览服务/预算；platform_crosscheck负责定位研究；root负责应用/UI、整合测试、Git发布及扩展实现。
+当前职责：core_audit负责协议、生命周期审查及发现注册表；history_architecture负责最新产品方向与文档；platform_crosscheck负责 Windows 原生 BLE 后端；wireless_positioning负责空间感知专项研究；root负责后台整合、整体验证和 Git 发布。
+
+后续范围：自动密钥建立与匹配、Windows BLE 文字接收服务、双机文字与动画互通仍未完成；无手工填写信息，不把发现成功描述为完整 AirDrop 式传送。

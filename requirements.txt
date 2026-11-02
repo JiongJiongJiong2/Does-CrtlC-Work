@@ -1,2 +1,12 @@
 PySide6==6.11.1
 keyboard==0.13.5
+
+# Windows-native background BLE discovery; other platforms keep the Qt core.
+winrt-runtime==4.1.0; sys_platform == "win32"
+winrt-Windows.Devices.Bluetooth==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Devices.Bluetooth.Advertisement==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Devices.Bluetooth.GenericAttributeProfile==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Foundation==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Foundation.Collections==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Storage.Streams==4!10.0.28000.2957; sys_platform == "win32"
+typing_extensions==4.16.0; sys_platform == "win32"

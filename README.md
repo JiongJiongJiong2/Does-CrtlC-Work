@@ -97,6 +97,8 @@ If global hotkeys are unavailable, clipboard-change feedback continues. Normal W
 
 ## Documentation
 
+The `feature/device-transfer` branch is developing automatic nearby-device discovery for two Windows computers with Bluetooth enabled. Install `requirements.txt` for source development, then start normally with `python main.py`; discovery starts automatically and can be disabled for debugging with `--no-nearby`. No manual IP, port, key setup or new transfer interface is required. The native backend currently provides discovery only: automatic authenticated pairing, Windows BLE text reception, drag-to-send integration and cross-device delivery are not complete. All 203 tests pass, and the frozen exe has passed real startup, advertising/scanning and shutdown checks on one PC; two-computer validation remains pending. `requirements-transfer.txt` is only for internal protocol experiments. See [current capabilities and limits](docs/TRANSFER_PREVIEW.md).
+
 - [Documentation index](docs/README.md)
 - [Current technical review and status](docs/planning711/PROJECT_REVIEW.md)
 - [Packaging slimming guide](docs/PACKAGING.md)

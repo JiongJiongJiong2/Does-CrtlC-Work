@@ -24,10 +24,10 @@ from ui.theme import ThemeController
 from ui.text_style import TextStyleResolver
 
 
-def _configure_logging():
+def _configure_logging(filename='dose-ctrlc.log'):
     log_dir = QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
     os.makedirs(log_dir, exist_ok=True)
-    log_path = os.path.join(log_dir, 'dose-ctrlc.log')
+    log_path = os.path.join(log_dir, filename)
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s %(levelname)s %(name)s: %(message)s',
@@ -62,13 +62,16 @@ class ClipboardFXApp:
         self.app.setApplicationDisplayName("Does CtrlC Work")
         self.app.setOrganizationName('DoseCtrlC')
         self.app.setApplicationVersion(APP_VERSION)
-        _configure_logging()
+        smoke_test = '--smoke-test' in sys.argv
+        _configure_logging('dose-ctrlc-smoke.log' if smoke_test else 'dose-ctrlc.log')
         self._instance_lock = QLockFile(os.path.join(
-            QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation), 'instance.lock'))
+            QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation),
+            'smoke.instance.lock' if smoke_test else 'instance.lock'))
         self._instance_lock.setStaleLockTime(0)
         if not self._instance_lock.tryLock(0):
             raise RuntimeError('Dose CtrlC is already running, or its instance lock is unavailable.')
         self._quitting = False
+        self._nearby = None
         self._settings = QSettings('DoseCtrlC', 'DoseCtrlC')
         self._content_font_latin = self._settings.value(
             'content_font_latin', '', type=str)
@@ -128,6 +131,21 @@ class ClipboardFXApp:
                    'holding': self._toggle_holding_mode}.get(command)
         if handler:
             handler()
+
+    def _start_nearby(self):
+        if self._quitting or self._nearby is not None or '--no-nearby' in sys.argv:
+            return
+        from core.nearby_discovery import NearbyDiscovery
+        self._nearby = NearbyDiscovery(self.app)
+        self._nearby.status.connect(logging.getLogger(__name__).info)
+        self._nearby.start()
+
+    def _on_received_text(self, text):
+        # Receiving is a new visual session. It does not write the clipboard or
+        # cause another transmission. The transport will call this only after
+        # its future automatic connection/receive flow has completed.
+        if not self._quitting:
+            self._on_copy_success(text)
         
     def _setup_tray(self):
         """设置系统托盘"""
@@ -417,19 +435,35 @@ class ClipboardFXApp:
 
     def run(self):
         """运行应用"""
-        # 显示托盘图标
         self.tray.show()
-        
-        # 启动剪贴板监听
-        self.clipboard_monitor.start_monitoring()
-        
-        # 运行事件循环
-        return self.app.exec()
+        try:
+            self.clipboard_monitor.start_monitoring()
+            self._start_nearby()
+            # Developer packaging smoke: exercise normal startup and shutdown
+            # without leaving a second tray process behind.
+            if '--smoke-test' in sys.argv:
+                QTimer.singleShot(10_000, self._quit)
+            return self.app.exec()
+        finally:
+            # Qt/session shutdown can bypass our tray command. Timers scheduled
+            # by _quit no longer suffice once exec() has returned: keep owners
+            # alive and drain cooperative workers before releasing QApplication.
+            self._quit()
+            while True:
+                previews_done = self.clipboard_monitor.shutdown_preview(wait_ms=50)
+                nearby = getattr(self, '_nearby', None)
+                nearby_done = nearby is None or nearby.stop(wait_ms=50)
+                if previews_done and nearby_done:
+                    break
+                self.app.processEvents()
+            self.tray.hide()
         
     def _quit(self):
         if getattr(self, '_quitting', False):
             return
         self._quitting = True
+        nearby = getattr(self, '_nearby', None)
+        nearby_finished = nearby is None or nearby.stop(wait_ms=0)
         self._feedback_session_id = None
         self._remove_navigation_hotkeys()
         """退出应用"""
@@ -443,15 +477,17 @@ class ClipboardFXApp:
         finished = self.clipboard_monitor.stop_monitoring()
         if self._current_widget:
             self._current_widget.stop()
-        if finished:
+        if finished and nearby_finished:
             self.tray.hide()
             self.app.quit()
         else:
-            self.tray.setToolTip('Does CtrlC Work — 正在等待预览任务退出')
+            self.tray.setToolTip('Does CtrlC Work — 正在停止后台任务')
             QTimer.singleShot(50, self._finish_quit)
 
     def _finish_quit(self):
-        if self.clipboard_monitor.shutdown_preview(wait_ms=0):
+        nearby = getattr(self, '_nearby', None)
+        nearby_finished = nearby is None or nearby.stop(wait_ms=0)
+        if self.clipboard_monitor.shutdown_preview(wait_ms=0) and nearby_finished:
             self.tray.hide()
             self.app.quit()
         else:

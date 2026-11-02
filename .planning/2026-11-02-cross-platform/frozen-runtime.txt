@@ -1,0 +1,18 @@
+2026-11-03 first frozen startup smoke
+Command: packaging-artifacts/nearby-preview/DoesCtrlCWork.exe --smoke-test
+Result: failed before application initialization, hidden exception dialog.
+Window read through computer-use; no clipboard/text transmission occurred.
+Error: DLL load failed while importing QtWidgets: 找不到指定的程序。
+Trace: main.py line 11, from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+Own test parent/child processes were identified by full executable path and cleaned up.
+Existing user application at Desktop/A/DoesCtrlCWork.exe was left running.
+
+Final corrected build:
+Cause: wrongly collected Poppler ICU, see packaging-icu-audit.log.
+Archive: WinRT tables=6, runtime=True, incorrect ICU files=False.
+Size: 32606204 bytes.
+SHA256: 43781f6a9e84ffce7fb993ca6edf372eeb1fd9db6f1e6734753cac7883fc573b
+2026-11-03 01:28:21: application logging initialized.
+2026-11-03 01:28:22: 本机广播和扫描已启动；发现不等于配对或信任
+--smoke-test exited normally after its 10-second timer, exit code 0.
+This validates frozen startup/discovery/shutdown on one PC, not two-PC transfer.

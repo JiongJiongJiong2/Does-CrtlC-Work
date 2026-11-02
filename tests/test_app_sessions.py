@@ -83,3 +83,67 @@ class AppSessionTests(unittest.TestCase):
             controller._finish_quit()
         controller.app.quit.assert_called_once()
         controller.tray.hide.assert_called_once()
+
+    def test_received_text_reuses_feedback_and_rejects_older_local_images(self):
+        controller = ClipboardFXApp.__new__(ClipboardFXApp)
+        controller._quitting = False
+        controller.silent_mode = False
+        controller._current_widget = None
+        controller._holding_mode = False
+        controller._image_layout_mode = 'fan'
+        controller.mouse_tracker = Mock()
+        controller.mouse_tracker.get_current_position.return_value = (100, 100)
+        controller._set_text_navigation_enabled = Mock()
+        controller._remove_navigation_hotkeys = Mock()
+        with patch('main.CursorMetrics.detect', return_value=SimpleNamespace(
+                ui_scale=1.0, offset_x=16, offset_y=16)):
+            controller._on_copy_session(7, 'local copy', [], 0)
+            old_widget = controller._current_widget
+            controller._on_received_text('received from peer')
+        self.assertFalse(old_widget._active)
+        self.assertEqual(controller._current_widget._raw_text, 'received from peer')
+        self.assertEqual(controller._current_widget._feedback_type, FeedbackType.COPY)
+        image = QImage(4, 4, QImage.Format_ARGB32)
+        image.fill(0xFFFFFFFF)
+        controller._on_session_images(7, [image], 1)
+        self.assertFalse(controller._current_widget._images)
+        controller._current_widget.stop()
+
+    def test_quit_waits_for_bluetooth_cleanup_even_when_preview_finished(self):
+        controller = ClipboardFXApp.__new__(ClipboardFXApp)
+        controller.clipboard_monitor = Mock()
+        controller.clipboard_monitor.shutdown_preview.return_value = True
+        controller._nearby = Mock()
+        controller._nearby.stop.side_effect = [False, True]
+        controller.tray = Mock()
+        controller.app = Mock()
+        with patch('main.QTimer.singleShot') as schedule:
+            controller._finish_quit()
+            controller.app.quit.assert_not_called()
+            schedule.assert_called_once()
+            controller._finish_quit()
+        controller.app.quit.assert_called_once()
+        controller._nearby.stop.assert_called_with(wait_ms=0)
+
+    def test_event_loop_return_still_stops_and_drains_background_workers(self):
+        controller = ClipboardFXApp.__new__(ClipboardFXApp)
+        controller._quitting = False
+        controller._nearby = Mock()
+        controller._nearby.stop.side_effect = [False, False, True]
+        controller._start_nearby = Mock()
+        controller._remove_navigation_hotkeys = Mock()
+        controller._command_hotkeys = []
+        controller._current_widget = None
+        controller.mouse_tracker = Mock()
+        controller.clipboard_monitor = Mock()
+        controller.clipboard_monitor.stop_monitoring.return_value = True
+        controller.clipboard_monitor.shutdown_preview.return_value = True
+        controller.tray = Mock()
+        controller.app = Mock()
+        controller.app.exec.return_value = 7
+        with patch('main.QTimer.singleShot'):
+            self.assertEqual(controller.run(), 7)
+        controller.clipboard_monitor.stop_monitoring.assert_called_once()
+        self.assertEqual(controller._nearby.stop.call_count, 3)
+        controller.app.processEvents.assert_called_once()
+        controller.tray.hide.assert_called_once()

@@ -1,0 +1,13 @@
+Frozen startup ICU audit (read-only PE analysis, 2026-11-03)
+Symptom: frozen main.py import PySide6.QtWidgets fails with missing procedure; source import main succeeds.
+QtCore source: E:\github\Dose-ctrlC-work\dose-ctrlc\.venv\Lib\site-packages\PySide6\Qt6Core.dll
+Incorrect packaged ICU source: C:\Users\何炯乐\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\poppler\Library\bin\icuuc.dll
+System ICU source: C:\Windows\System32\icuuc.dll
+QtCore ICU imports: 20; missing from packaged ICU: 20; missing from system ICU: 0
+Packaged ICU has ucnv_open_78: True
+Missing packaged exports: UCNV_FROM_U_CALLBACK_SUBSTITUTE, UCNV_TO_U_CALLBACK_SUBSTITUTE, ucnv_cbFromUWriteUChars, ucnv_cbToUWriteUChars, ucnv_close, ucnv_countAvailable, ucnv_fromUCountPending, ucnv_fromUnicode, ucnv_getAvailableName, ucnv_getFromUCallBack, ucnv_getMaxCharSize, ucnv_getName, ucnv_getStandardName, ucnv_getToUCallBack, ucnv_open, ucnv_reset, ucnv_setFromUCallBack, ucnv_setToUCallBack, ucnv_toUCountPending, ucnv_toUnicode
+All ICU dependency edges in Analysis: PySide6\Qt6Core.dll -> icuuc.dll; icuuc.dll -> icudt78.dll
+Spec filter verified removed ICU entries only: icuuc.dll, icudt78.dll
+QtCore remains collected. No VC runtime changes. No OS DLLs copied.
+No EXE, QApplication, hotkeys, or Bluetooth started during this audit.
+Frozen rebuild and real smoke remain for root.
