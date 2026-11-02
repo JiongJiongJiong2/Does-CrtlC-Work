@@ -19,20 +19,20 @@
 ## Features
 
 - **Copy Success (Text)** — Yellow indicator dot + expanding panel with scramble-text reveal.
-- **Text Viewport Navigation** — Long copied text stays bounded inside the panel: `←` / `→` smoothly pan by pixels, while `↓` expands to inspect additional lines and `↑` collapses them again.
+- **Text Viewport Navigation** — Use `Ctrl+Alt+←/→` to pan and `Ctrl+Alt+↓/↑` to expand/collapse. Plain arrows remain available to the foreground application.
 - **Copy Success (Image)** — 120×120 rounded thumbnail with pixel-style reveal animation.
 - **Multi-Image Layouts** — Choose the original three-image fan or a four-image horizontal cascade from the tray's compact text selector; the selected mode is remembered.
 - **Holding Mode** — Copy feedback stays on screen until `Ctrl+V` is detected or a timeout is reached. It represents a paste-key intent, not a system-wide guarantee that the target app accepted the paste.
 - **Clipboard-first Image Loading** — Browser-provided `image/*` bytes are snapshotted before any URL fetch; file/data-URI sources follow, and web-image download is a bounded final fallback.
-- **Resilient Web Image Fallback** — Up to three concurrent background tasks, two bounded download attempts, size limits, and diagnostic logs keep slow or protected web images from blocking the UI.
+- **Optional Web Image Fallback** — Remote previews are off by default. Start with `--remote-previews` to allow bounded, cancellable public HTTP(S) image requests. Clipboard-provided images work offline.
 - **Image Exit Animation** — Thumbnail shrinks toward the yellow indicator dot and disappears in sync with text collapse.
 - **Web Image Compatibility** — Supports clipboard image extraction from:
   - Direct bitmap (`image/*`)
   - Local file URL/path (`text/uri-list`, `file:///...`)
   - HTML `<img src=...>` (all images extracted, not just the first)
   - `data:image/...;base64` and `http/https` image URL fallback
-- **Copy Failed** — Red indicator dot (no valid copied content detected).
-- **Paste Success** — Green indicator dot.
+- **Copy Unconfirmed** — Red indicator dot when a clipboard update could not be confirmed; this does not prove that the target application failed to copy.
+- **Paste Key Detected** — Green indicator dot for the key intent; this does not prove that the target application accepted the paste.
 - **Silent Mode** — Toggle visual feedback on/off while app keeps running in tray (`Ctrl+Shift+M`).
 - **Cursor-bound** — Animation follows your mouse directly, no delay.
 - **System Tray Resident** — Background running with quick status and exit control.
@@ -56,7 +56,7 @@
 |--------|--------|
 | `Ctrl+C` (with text) | Yellow dot + text panel |
 | `Ctrl+C` (with image) | Yellow dot + image thumbnail + stack if multiple images |
-| `Ctrl+C` (no selection / unchanged clipboard) | Red dot (copy failed) |
+| `Ctrl+C` without a confirmed clipboard update | Red dot (update unconfirmed) |
 | `Ctrl+V` | Green dot (paste detected) |
 | `Ctrl+Shift+M` | Toggle Silent Mode (visual feedback on/off) |
 | `Ctrl+Shift+H` | Toggle Holding Mode (dismiss a held copy on `Ctrl+V`) |
@@ -93,8 +93,7 @@ conda run -n ctrlc python -m PyInstaller --noconfirm --clean DoesCtrlCWork.spec
 
 Output exe location: `dist/DoesCtrlCWork.exe`.
 
-> Note: `keyboard` library requires **Administrator privileges** for global hotkey detection on Windows.  
-> Right-click the exe and choose "Run as administrator".
+If global hotkeys are unavailable, clipboard-change feedback continues. Normal Windows use does not require running the entire application as administrator; elevated foreground applications may restrict input observation.
 
 ## Documentation
 
@@ -103,6 +102,12 @@ Output exe location: `dist/DoesCtrlCWork.exe`.
 - [Packaging slimming guide](docs/PACKAGING.md)
 
 ## Release History
+
+### v2.3.1 — Clipboard Sessions and Safe Preview Lifecycle
+
+Copy intents and clipboard changes are correlated independently of GUI callback order. New events invalidate old retries and image jobs; late images update only their own copy session. All application hotkeys dispatch on the GUI thread. A bounded preview service owns cancellation, decoding and shutdown. Remote fetching is opt-in, image inputs have byte/pixel/count budgets, navigation uses modifier keys, logs rotate, and a process lock prevents duplicate instances. `app_version.py` is the version source; build dependencies are pinned in `requirements-build.txt`.
+
+Windows offscreen regression and isolated event tests accompany these changes. Native desktop interaction and other platforms still require manual acceptance.
 
 ### v2.3.0 — Text Viewport, Clipboard Image Reliability, and Typography
 

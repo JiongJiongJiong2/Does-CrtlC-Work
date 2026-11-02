@@ -1,10 +1,12 @@
 # Windows 打包瘦身指南
 
+> 2026-11-03 更新：v2.3.1 的可取消预览服务使用 QtNetwork，spec 已恢复 QtNetwork 与 TLS 插件。下文的 7 月体积表及 v3 裁剪是历史实验，不能继续照此排除网络运行时。构建使用 `.venv`、`requirements-build.txt` 和 `build.bat`；版本从 `app_version.py` 生成。
+
 ## 结论
 
 当前 `dist/DoesCtrlCWork.exe` 是 45.73 MiB 的旧 PyInstaller onefile 产物（2026-06-17）。体积主要来自 Python 运行时与 PySide6/Qt，不是业务 Python 代码。它甚至仍带有已经移除的 `pyperclip` 构建痕迹，因此必须先从当前代码重建基线，不能把旧 exe 当作发布候选。
 
-当前应用实际使用 `PySide6.QtCore`、`PySide6.QtGui`、`PySide6.QtWidgets`；不使用 QML、Qt Quick、PDF、SVG、Virtual Keyboard、QtNetwork API 或 Qt OpenGL API。
+当前应用实际使用 `PySide6.QtCore`、`PySide6.QtGui`、`PySide6.QtWidgets` 和 `PySide6.QtNetwork`；不使用 QML、Qt Quick、PDF、SVG、Virtual Keyboard 或 Qt OpenGL API。
 
 > `build.bat` 和 README 均使用受版本控制的 `DoesCtrlCWork.spec`，并生成唯一的 `DoesCtrlCWork.exe`。请不要手工创建临时 spec，否则裁剪结果无法复现。
 
@@ -22,7 +24,7 @@
 | `Qt6Pdf.dll` | 2.35 MiB | 不需要 |
 | `Qt6Qml*.dll` | 2.55 MiB | 不需要 |
 | `Qt6Widgets.dll` | 2.58 MiB | 必需 |
-| `Qt6Network.dll` / `QtNetwork.pyd` | 1.11 MiB | 候选排除，应用不使用其 API |
+| `Qt6Network.dll` / `QtNetwork.pyd` | 1.11 MiB | 历史体积；现为必需 |
 | `Qt6OpenGL.dll` | 0.38 MiB | 不需要 Qt OpenGL API |
 | Qt 翻译、TLS、非 Windows 平台和多余图像插件 | 分散 | 大多不需要，逐组验证 |
 
@@ -37,7 +39,7 @@
 | v2：v1 + `opengl32sw.dll` | **26.98 MiB** | **-18.77 MiB / -41.0%** | 归档检查、3 秒启动通过 |
 | v3：v2 + `Qt6Network.dll` / `QtNetwork.pyd` | **25.91 MiB** | **-19.84 MiB / -43.4%** | 归档检查、15 项离屏测试、4 秒启动通过 |
 
-当前 `DoesCtrlCWork.spec` 已固化 v3 规则，`build.bat` 与 README 均以它为唯一构建入口。v3 尚需在真实桌面完成复制文本、图片、多图、Holding、托盘和高 DPI 手动验收，才可作为正式发布包。
+当时的 `DoesCtrlCWork.spec` 固化了 v3 规则；现已恢复 QtNetwork/TLS，需重新测量体积。当前构建仍需在真实桌面完成复制文本、图片、多图、Holding、托盘和高 DPI 手动验收。
 
 ## 你需要做什么
 
@@ -48,7 +50,7 @@
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python -m pip install --upgrade pip
-.\.venv\Scripts\python -m pip install -r requirements.txt pyinstaller
+.\.venv\Scripts\python -m pip install -r requirements-build.txt
 .\.venv\Scripts\python -m PyInstaller --noconfirm --clean DoesCtrlCWork.spec
 ```
 
@@ -60,8 +62,8 @@ python -m venv .venv
 
 1. Qt 翻译：程序没有安装 `QTranslator`，可先排除全部翻译资源。
 2. 明确不用的模块：QML、Quick、Pdf、VirtualKeyboard、Svg、Qt OpenGL API。
-3. 插件：保留 Windows 的 `qwindows` 平台插件；先去掉 `qminimal`、`qoffscreen`、触摸、SVG 图标、TLS 和确认不用的图像格式插件。
-4. `QtNetwork` 与 `opengl32sw.dll`：代码没有直接使用它们，但它们可能承担 Qt 的动态回退路径，必须放在最后单独验证。
+3. 插件：保留 Windows 的 `qwindows` 平台插件与 TLS；只考虑移除确认不用的插件。
+4. `opengl32sw.dll`：可能承担 Qt 的动态回退路径，必须单独验证。QtNetwork 现在被直接使用，不可排除。
 
 不要以删除 site-packages 中的 DLL 作为方案；这会破坏开发环境，也不能保证构建可复现。应通过 spec 的收集结果或项目内自定义 PyInstaller hook 排除，使规则进入 Git。
 

@@ -1,13 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+import runpy
+
+version_resource = runpy.run_path(str(Path(SPECPATH) / 'tools' / 'generate_version.py'))['resource']()
+(Path(SPECPATH) / 'version.txt').write_text(version_resource, encoding='utf-8')
 
 
 # Qt for Python's hooks discover dynamic dependencies conservatively. This
 # application is QWidget/QPainter based and deliberately does not ship QML,
-# Quick, PDF, SVG, virtual keyboard, Qt Network, or Qt OpenGL APIs.
+# Quick, PDF, SVG, virtual keyboard, or Qt OpenGL APIs.
+# QtNetwork and TLS are required for cancellable, opt-in image requests.
 EXCLUDED_QT_BINARIES = {
     'PySide6/Qt6OpenGL.dll',
-    'PySide6/Qt6Network.dll',
-    'PySide6/QtNetwork.pyd',
     'PySide6/Qt6Pdf.dll',
     'PySide6/Qt6Qml.dll',
     'PySide6/Qt6QmlMeta.dll',
@@ -27,14 +31,10 @@ EXCLUDED_QT_BINARIES = {
     'PySide6/plugins/imageformats/qtga.dll',
     'PySide6/plugins/imageformats/qtiff.dll',
     'PySide6/plugins/imageformats/qwbmp.dll',
-    'PySide6/plugins/networkinformation/qnetworklistmanager.dll',
     'PySide6/plugins/platforminputcontexts/qtvirtualkeyboardplugin.dll',
     'PySide6/plugins/platforms/qdirect2d.dll',
     'PySide6/plugins/platforms/qminimal.dll',
     'PySide6/plugins/platforms/qoffscreen.dll',
-    'PySide6/plugins/tls/qcertonlybackend.dll',
-    'PySide6/plugins/tls/qopensslbackend.dll',
-    'PySide6/plugins/tls/qschannelbackend.dll',
 }
 EXCLUDED_QT_DATA_PREFIXES = ('PySide6/translations/',)
 
@@ -58,7 +58,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         'PySide6.QtOpenGL',
-        'PySide6.QtNetwork',
         'PySide6.QtPdf',
         'PySide6.QtQml',
         'PySide6.QtQuick',

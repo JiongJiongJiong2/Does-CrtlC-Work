@@ -22,11 +22,19 @@ ANIMATION_DURATION = {
 CLIPBOARD_CHECK = {
     'confirmation_timeout': 700,       # Ctrl+C 等待系统剪贴板事件的最长时间(ms)
     'event_retry_delays': [40, 120],   # 事件已到达但 MIME 暂不可读时的有限重试(ms)
-    'raw_image_max_bytes': 16 * 1024 * 1024,
-    'image_download_timeout': 3.0,     # 图片 URL 后台连接/读取超时(秒)
-    'image_download_attempts': 2,      # 网络图片最多尝试次数
-    'image_download_retry_delay': 0.15,
-    'image_download_max_bytes': 2 * 1024 * 1024,
+}
+
+# All preview inputs share these limits. Network preview is explicitly opt-in.
+PREVIEW_LIMITS = {
+    'max_concurrent': 3,
+    'max_images': 4,
+    'max_image_bytes': 16 * 1024 * 1024,  # encoded bytes (raw MIME/file/data/HTTP)
+    'max_total_bytes': 32 * 1024 * 1024,  # encoded bytes per copy session
+    'max_image_pixels': 16 * 1024 * 1024,
+    'max_total_pixels': 32 * 1024 * 1024,
+    'thumbnail_edge': 256,
+    'decoder_allocation_mb': 64,
+    'remote_deadline_ms': 5000,
 }
 
 # 颜色配置

@@ -1,0 +1,71 @@
+519 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6
+520 INFO: Python: 3.14.4
+549 INFO: Platform: Windows-11-10.0.26200-SP0
+549 INFO: Python environment: E:\github\Dose-ctrlC-work\dose-ctrlc\.venv
+589 INFO: Module search paths (PYTHONPATH):
+['E:\\github\\Dose-ctrlC-work\\dose-ctrlc',
+ 'C:\\Python314\\python314.zip',
+ 'C:\\Python314\\DLLs',
+ 'C:\\Python314\\Lib',
+ 'C:\\Python314',
+ 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv',
+ 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages',
+ 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc']
+1567 INFO: Appending 'datas' from .spec
+1567 INFO: checking Analysis
+1597 INFO: Building because excludes changed
+1597 INFO: Looking for Python shared library...
+1597 INFO: Using Python shared library: C:\Python314\python314.dll
+1597 INFO: Running Analysis Analysis-00.toc
+1597 INFO: Target bytecode optimization level: 0
+1597 INFO: Initializing module dependency graph...
+1602 INFO: Initializing module graph hook caches...
+1629 INFO: Analyzing modules for base_library.zip ...
+4672 INFO: Processing standard module hook 'hook-encodings.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+6843 INFO: Processing standard module hook 'hook-math.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+8731 INFO: Processing standard module hook 'hook-difflib.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+8757 INFO: Processing standard module hook 'hook-heapq.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+8917 INFO: Processing standard module hook 'hook-pickle.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+11060 INFO: Caching module dependency graph...
+11115 INFO: Analyzing E:\github\Dose-ctrlC-work\dose-ctrlc\main.py
+11421 INFO: Processing standard module hook 'hook-platform.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+11516 INFO: Processing standard module hook 'hook-sysconfig.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+11529 INFO: Processing standard module hook 'hook-_ctypes.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+11807 INFO: Processing standard module hook 'hook-PySide6.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+12411 INFO: Processing standard module hook 'hook-shiboken6.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+12841 INFO: Processing standard module hook 'hook-PySide6.QtNetwork.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+19936 INFO: Processing standard module hook 'hook-PySide6.QtCore.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+28805 INFO: Processing standard module hook 'hook-PySide6.QtWidgets.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+37510 INFO: Processing standard module hook 'hook-PySide6.QtGui.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+96709 INFO: Processing module hooks (post-graph stage)...
+96737 INFO: Performing binary vs. data reclassification (123 entries)
+96864 INFO: Looking for ctypes DLLs
+97039 INFO: Analyzing run-time hooks ...
+97040 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+97045 INFO: Including run-time hook 'pyi_rth_pyside6.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+97050 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+97056 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PyInstaller\\hooks'
+97073 INFO: Creating base_library.zip...
+97102 INFO: Looking for dynamic libraries
+97936 INFO: Extra DLL search directories (AddDllDirectory): ['E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\shiboken6']
+97936 INFO: Extra DLL search directories (PATH): ['E:\\github\\Dose-ctrlC-work\\dose-ctrlc\\.venv\\Lib\\site-packages\\PySide6']
+102245 INFO: Warnings written to E:\github\Dose-ctrlC-work\dose-ctrlc\build\reliability\DoesCtrlCWork\warn-DoesCtrlCWork.txt
+102286 INFO: Graph cross-reference written to E:\github\Dose-ctrlC-work\dose-ctrlc\build\reliability\DoesCtrlCWork\xref-DoesCtrlCWork.html
+102339 INFO: checking PYZ
+102425 INFO: checking PKG
+102448 INFO: Building because toc changed
+102448 INFO: Building PKG (CArchive) DoesCtrlCWork.pkg
+110846 INFO: Building PKG (CArchive) DoesCtrlCWork.pkg completed successfully.
+110850 INFO: Bootloader E:\github\Dose-ctrlC-work\dose-ctrlc\.venv\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+110850 INFO: checking EXE
+110881 INFO: Building because toc changed
+110881 INFO: Building EXE from EXE-00.toc
+110889 INFO: Copying bootloader EXE to E:\github\Dose-ctrlC-work\dose-ctrlc\packaging-artifacts\reliability\DoesCtrlCWork.exe
+111002 INFO: Copying icon to EXE
+111080 INFO: Copying version information to EXE
+111156 INFO: Copying 0 resources to EXE
+111156 INFO: Embedding manifest in EXE
+111225 INFO: Appending PKG archive to EXE
+111333 INFO: Fixing EXE headers
+111897 INFO: Building EXE from EXE-00.toc completed successfully.
+111904 INFO: Build complete! The results are available in: E:\github\Dose-ctrlC-work\dose-ctrlc\packaging-artifacts\reliability

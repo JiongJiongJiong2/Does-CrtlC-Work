@@ -1,0 +1,7 @@
+EVENT_THEN_INTENT ['copy_confirmed', 'copy_failed']
+RETRY_STILL_ACTIVE_AFTER_NEW_SUCCESS True
+NEW_EVENT_AND_OLD_RETRY ['new', 'new']
+LATE_COPY_IMAGE_ROUTED_TO_PASTE_WIDGET [(1, 1)]
+IDENTICAL_PIXELS True
+COPY_BASED_DEDUP_MATCH False
+AUDIT_RESULT: all 4 current defects reproduced in isolation

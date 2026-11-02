@@ -70,6 +70,7 @@ class FeedbackWidget(QWidget):
         self._holding_mode = holding_mode
         self._active = True
         self._images: List[QImage] = []
+        self._image_source_keys = set()
         self._main_image: Optional[QImage] = None
         self._main_image_cache: Optional[ImageRenderCache] = None
         self._image_render_caches: List[Optional[ImageRenderCache]] = []
@@ -559,7 +560,7 @@ class FeedbackWidget(QWidget):
             self.move(win_x, win_y)
 
     def update_images(self, images, image_count):
-        if not self._active or not images:
+        if not self._active or not images or self._feedback_type != FeedbackType.COPY:
             return
         before = len(self._images)
         self._append_images(images)
@@ -588,15 +589,16 @@ class FeedbackWidget(QWidget):
         self.close()
 
     def _append_images(self, images) -> None:
-        known_keys = {image.cacheKey() for image in self._images}
         for image in (images or [])[:IMAGE_STACK['max_preload']]:
+            if len(self._images) >= IMAGE_STACK['max_preload']:
+                break
             if not isinstance(image, QImage) or image.isNull():
                 continue
-            copy = image.copy()
-            if copy.cacheKey() in known_keys:
+            source_key = image.cacheKey()
+            if source_key in self._image_source_keys:
                 continue
-            self._images.append(copy)
-            known_keys.add(copy.cacheKey())
+            self._images.append(image.copy())
+            self._image_source_keys.add(source_key)
         if self._images:
             self._main_image = self._images[0]
             self._main_image_cache = ImageRenderer.build_cache(self._main_image)

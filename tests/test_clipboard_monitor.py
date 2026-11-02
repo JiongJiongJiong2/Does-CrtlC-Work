@@ -142,24 +142,10 @@ class ImageWorkerTests(unittest.TestCase):
         worker.run()
         self.assertEqual(received, [[raw]])
 
-    def test_download_retries_network_failure_before_succeeding(self):
-        class Response:
-            headers = {'Content-Type': 'image/png'}
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_):
-                return False
-
-            def read(self, _):
-                return b'image-bytes'
-
-        with patch('core.clipboard_monitor.urlopen',
-                   side_effect=[URLError('temporary failure'), Response()]) as open_mock, \
-                patch('core.clipboard_monitor.time.sleep') as sleep_mock:
-            data = _ImageDataWorker._download('https://example.com/image.png')
-
-        self.assertEqual(data, b'image-bytes')
-        self.assertEqual(open_mock.call_count, 2)
-        sleep_mock.assert_called_once()
+    def test_legacy_worker_does_not_fetch_remote_urls(self):
+        worker = _ImageDataWorker(request_id=10, max_images=2)
+        worker.set_tasks(['https://example.com/image.png'], [], [])
+        received = []
+        worker.raw_images_ready.connect(lambda request_id, data: received.append(data))
+        worker.run()
+        self.assertEqual(received, [[]])

@@ -4,12 +4,14 @@ Does CtrlC Work - 剪贴板复制反馈动画工具
 """
 
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import sys
 import keyboard
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
-from PySide6.QtCore import Qt, QSettings, QObject, Signal
+from PySide6.QtCore import Qt, QSettings, QObject, Signal, Slot, QStandardPaths, QLockFile, QTimer
+from app_version import APP_VERSION
 
 from config import COLORS, SIZES
 from core.cursor_metrics import CursorMetrics
@@ -23,13 +25,14 @@ from ui.text_style import TextStyleResolver
 
 
 def _configure_logging():
-    log_dir = os.path.join(os.environ.get('LOCALAPPDATA', os.getcwd()), 'DoseCtrlC')
+    log_dir = QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, 'dose-ctrlc.log')
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s %(levelname)s %(name)s: %(message)s',
-        handlers=[logging.FileHandler(log_path, encoding='utf-8'), logging.StreamHandler()],
+        handlers=[RotatingFileHandler(log_path, maxBytes=2 * 1024 * 1024,
+                                     backupCount=2, encoding='utf-8'), logging.StreamHandler()],
     )
     logging.getLogger(__name__).info('logging initialized path=%s', log_path)
 
@@ -39,16 +42,33 @@ class _NavigationBridge(QObject):
 
     requested = Signal(str)
 
+    def __init__(self, callback, parent=None):
+        super().__init__(parent)
+        self._callback = callback
+        self.requested.connect(self._dispatch, Qt.ConnectionType.QueuedConnection)
+
+    @Slot(str)
+    def _dispatch(self, command):
+        self._callback(command)
+
 
 class ClipboardFXApp:
     """剪贴板反馈动画应用"""
     
     def __init__(self):
-        _configure_logging()
-        self.app = QApplication(sys.argv)
+        self.app = QApplication.instance() or QApplication(sys.argv)
         self.app.setQuitOnLastWindowClosed(False)  # 关闭窗口不退出
         self.app.setApplicationName("Does CtrlC Work")
         self.app.setApplicationDisplayName("Does CtrlC Work")
+        self.app.setOrganizationName('DoseCtrlC')
+        self.app.setApplicationVersion(APP_VERSION)
+        _configure_logging()
+        self._instance_lock = QLockFile(os.path.join(
+            QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation), 'instance.lock'))
+        self._instance_lock.setStaleLockTime(0)
+        if not self._instance_lock.tryLock(0):
+            raise RuntimeError('Dose CtrlC is already running, or its instance lock is unavailable.')
+        self._quitting = False
         self._settings = QSettings('DoseCtrlC', 'DoseCtrlC')
         self._content_font_latin = self._settings.value(
             'content_font_latin', '', type=str)
@@ -73,27 +93,41 @@ class ClipboardFXApp:
         self.mouse_tracker.spring_position_changed.connect(self._on_mouse_move)
         
         # 剪贴板监听器
-        self.clipboard_monitor = ClipboardMonitor()
-        self.clipboard_monitor.copy_rich.connect(self._on_copy_success)
+        self.clipboard_monitor = ClipboardMonitor(remote_previews='--remote-previews' in sys.argv)
+        self.clipboard_monitor.copy_session.connect(self._on_copy_session)
         self.clipboard_monitor.copy_failed.connect(self._on_copy_failed)
         self.clipboard_monitor.paste_detected.connect(self._on_paste)
-        self.clipboard_monitor.images_updated.connect(self._on_images_updated)
+        self.clipboard_monitor.images_for_session.connect(self._on_session_images)
 
         # 当前活动的反馈窗口
         self._current_widget = None
+        self._feedback_session_id = None
         self._navigation_hotkeys = []
-        self._navigation_bridge = _NavigationBridge(self.app)
-        self._navigation_bridge.requested.connect(
-            self._on_text_navigation_requested)
+        self._navigation_bridge = _NavigationBridge(self._on_text_navigation_requested, self.app)
+        self._command_bridge = _NavigationBridge(self._dispatch_command, self.app)
         
         # 当前鼠标位置
         self._mouse_x = 0
         self._mouse_y = 0
         
         # 全局快捷键
-        keyboard.add_hotkey('ctrl+shift+q', self._quit, suppress=False)
-        keyboard.add_hotkey('ctrl+shift+m', self._toggle_silent_mode, suppress=False)
-        keyboard.add_hotkey('ctrl+shift+h', self._toggle_holding_mode, suppress=False)
+        self._command_hotkeys = []
+        for shortcut, command in (('ctrl+shift+q', 'quit'),
+                                  ('ctrl+shift+m', 'silent'), ('ctrl+shift+h', 'holding')):
+            try:
+                self._command_hotkeys.append(keyboard.add_hotkey(
+                    shortcut, lambda value=command: self._command_bridge.requested.emit(value),
+                    suppress=False))
+            except Exception:
+                logging.getLogger(__name__).warning('Hotkey unavailable: %s', shortcut, exc_info=True)
+
+    def _dispatch_command(self, command):
+        if getattr(self, '_quitting', False):
+            return
+        handler = {'quit': self._quit, 'silent': self._toggle_silent_mode,
+                   'holding': self._toggle_holding_mode}.get(command)
+        if handler:
+            handler()
         
     def _setup_tray(self):
         """设置系统托盘"""
@@ -205,6 +239,14 @@ class ClipboardFXApp:
         """复制成功回调"""
         self._show_feedback(FeedbackType.COPY, text, images=images, image_count=image_count)
 
+    def _on_copy_session(self, session_id, text, images, image_count):
+        self._on_copy_success(text, images, image_count)
+        self._feedback_session_id = session_id if self._current_widget else None
+
+    def _on_session_images(self, session_id, images, image_count):
+        if session_id == getattr(self, '_feedback_session_id', None):
+            self._on_images_updated(images, image_count)
+
     def _on_text_navigation_requested(self, direction: str):
         if self._current_widget and self._current_widget._active:
             self._current_widget.navigate_text(direction)
@@ -219,12 +261,16 @@ class ClipboardFXApp:
         if self._navigation_hotkeys:
             return
         for direction in ('left', 'right', 'up', 'down'):
-            handle = keyboard.add_hotkey(
-                direction,
-                lambda key=direction: self._navigation_bridge.requested.emit(key),
-                suppress=True,
-                trigger_on_release=False)
-            self._navigation_hotkeys.append(handle)
+            try:
+                handle = keyboard.add_hotkey(
+                    'ctrl+alt+' + direction,
+                    lambda key=direction: self._navigation_bridge.requested.emit(key),
+                    suppress=sys.platform.startswith('win'), trigger_on_release=False)
+                self._navigation_hotkeys.append(handle)
+            except Exception:
+                logging.getLogger(__name__).warning('Text navigation hotkey unavailable', exc_info=True)
+                self._remove_navigation_hotkeys()
+                break
 
     def _remove_navigation_hotkeys(self):
         for handle in getattr(self, '_navigation_hotkeys', []):
@@ -236,7 +282,8 @@ class ClipboardFXApp:
 
     def _on_images_updated(self, images, image_count: int):
         """异步图片到达回调（Bug 3: 延迟图片支持）"""
-        if self._current_widget and self._current_widget._active:
+        if (self._current_widget and self._current_widget._active and
+                self._current_widget._feedback_type == FeedbackType.COPY):
             self._current_widget.update_images(images, image_count)
         
     def _on_copy_failed(self):
@@ -245,6 +292,7 @@ class ClipboardFXApp:
         
     def _on_paste(self):
         """粘贴回调"""
+        self._feedback_session_id = None
         # Ctrl+V only dismisses the copy feedback that explicitly opted into
         # holding. Ordinary copy feedback must still be replaced by the green
         # paste confirmation.
@@ -260,6 +308,8 @@ class ClipboardFXApp:
         """显示反馈动画"""
         if self.silent_mode:
             return
+
+        self._feedback_session_id = None
 
         # 如果有正在进行的动画，先停止
         if self._current_widget:
@@ -297,6 +347,7 @@ class ClipboardFXApp:
             self._current_widget.can_navigate_text)
         
     def _on_animation_complete(self):
+        self._feedback_session_id = None
         self._remove_navigation_hotkeys()
         """动画完成回调"""
         if self._current_widget:
@@ -322,6 +373,8 @@ class ClipboardFXApp:
     def _set_feedback_enabled(self, enabled: bool):
         """Enable or suppress visual feedback while keeping clipboard monitoring alive."""
         self.silent_mode = not bool(enabled)
+        if self.silent_mode:
+            self._feedback_session_id = None
         self._settings.setValue('feedback_enabled', not self.silent_mode)
         if self.silent_mode and self._current_widget:
             self._remove_navigation_hotkeys()
@@ -374,20 +427,46 @@ class ClipboardFXApp:
         return self.app.exec()
         
     def _quit(self):
+        if getattr(self, '_quitting', False):
+            return
+        self._quitting = True
+        self._feedback_session_id = None
         self._remove_navigation_hotkeys()
         """退出应用"""
-        keyboard.unhook_all_hotkeys()  # 先移除所有热键，避免重复触发
+        for handle in getattr(self, '_command_hotkeys', []):
+            try:
+                keyboard.remove_hotkey(handle)
+            except (KeyError, ValueError):
+                pass
+        self._command_hotkeys = []
         self.mouse_tracker.stop_tracking()
-        self.clipboard_monitor.stop_monitoring()
-        self.tray.hide()
-        self.app.quit()
+        finished = self.clipboard_monitor.stop_monitoring()
+        if self._current_widget:
+            self._current_widget.stop()
+        if finished:
+            self.tray.hide()
+            self.app.quit()
+        else:
+            self.tray.setToolTip('Does CtrlC Work — 正在等待预览任务退出')
+            QTimer.singleShot(50, self._finish_quit)
+
+    def _finish_quit(self):
+        if self.clipboard_monitor.shutdown_preview(wait_ms=0):
+            self.tray.hide()
+            self.app.quit()
+        else:
+            QTimer.singleShot(50, self._finish_quit)
 
 
 def main():
     """主函数"""
-    app = ClipboardFXApp()
+    try:
+        app = ClipboardFXApp()
+    except RuntimeError as error:
+        logging.getLogger(__name__).error('%s', error)
+        return 1
     sys.exit(app.run())
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
